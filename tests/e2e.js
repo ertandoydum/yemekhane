@@ -24,40 +24,61 @@ const fb = http.createServer((req, res) => {
   const page = await ctx.newPage();
   const errors = []; page.on('pageerror', e => errors.push('pageerror: ' + e.message)); page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
   page.on('dialog', d => d.accept());
-  await page.goto(URL); await page.waitForSelector('.day');
+  await page.goto(URL); await page.waitForSelector('.cell');
   // sistem tarihi sabit değil → menüde bilinen bir aya git (Aralık 2026 → ocak 2027)
   const goMonth = async (ym) => page.evaluate(ym => { window.__yemekhane.st.month = ym; window.__yemekhane.render(false); }, ym);
   await goMonth('2027-01');
-  const cards = await page.$$eval('.day', els => els.map(e => e.innerText));
-  ok(cards.length >= 21, 'Ocak 2027: ' + cards.length + ' gün kartı');
-  ok(cards.some(c => /Hamburger|Köfte Ekmek|Kısır|Lahmacun|Tost/.test(c)), 'Çarşamba özel menü var');
-  ok(cards.some(c => /Menemen|Omlet|Krep|Pişi|Gözleme|Sigara/.test(c)), 'Cuma kahvaltı var');
-  ok(cards.some(c => /Yılbaşı/.test(c)), '1 Ocak tatil');
-  await page.screenshot({ path: '/tmp/s-menu.png', fullPage: false });
+  const cells = await page.$$eval('.cell:not(.out)', els => els.length);
+  ok(cells >= 21, 'Ocak 2027 takvim hücreleri: ' + cells);
+  const dayInfo = await page.evaluate(() => { const g = window.__yemekhane.getDay; return { wed: g('2027-01-06'), fri: g('2027-01-08'), hol: g('2027-01-01'), mon: g('2027-01-04') }; });
+  ok(dayInfo.wed.combo && dayInfo.fri.combo && /Kahvaltı/.test(dayInfo.fri.combo), 'Çarşamba/Cuma özel menü: ' + dayInfo.wed.combo + ' / ' + dayInfo.fri.combo);
+  ok(dayInfo.hol.off, '1 Ocak tatil');
+  await page.locator('.cell[data-d="2027-01-04"]').click();
+  ok((await page.locator('#daycard .lrow').count()) === 5, 'gün detayında 5 çeşit listeleniyor');
+  const dtext = await page.locator('#daycard').innerText();
+  ok(!/ÇORBA|^ANA$|PİLAV|SALATA|TATLI/m.test(dtext), 'listelerde kategori etiketi yazmıyor');
+  const cellTxt = await page.locator('.cell[data-d="2027-01-04"]').innerText(); ok(cellTxt.length > 3, 'takvim hücresinde yemek adı var: ' + cellTxt.replace(/\n/g, ' '));
+  await page.screenshot({ path: '/tmp/s-menu.png' });
 
   // gün düzenleme
-  const normalCard = page.locator('.day:not(.special):not(.off)').first(); const before = await normalCard.innerText();
-  await normalCard.click(); await page.waitForSelector('#sheet .panel');
+  const before = await page.locator('#daycard').innerText();
+  await page.locator('#daycard [data-act="day"]').click(); await page.waitForSelector('#sheet .panel');
   const sel = page.locator('#sheet select[data-i="1"]'); const optVal = await sel.evaluate(s => [...s.options].map(o => o.value).find(v => v !== s.value));
-  await sel.selectOption(optVal);
-  await page.waitForTimeout(200);
+  await sel.selectOption(optVal); await page.waitForTimeout(200);
   await page.screenshot({ path: '/tmp/s-daysheet.png' });
   await page.locator('#sheet [data-act="dsave"]').click();
-  const after = await page.locator('.day:not(.special):not(.off)').first().innerText();
-  ok(before !== after, 'gün menüsü elle değiştirildi');
-  // yeniden oluştur
-  await normalCard.click(); await page.locator('[data-act="dshuffle"]').click(); await page.waitForSelector('#sheet .panel'); await page.locator('#sheet [data-act="dsave"]').click();
-  ok((await page.locator('.day:not(.special):not(.off)').first().innerText()).split('\n').length >= 6, 'gün yeniden oluşturuldu (5 çeşit)');
-  // günü yemek yok yap ve geri al
-  await page.locator('.day:not(.special):not(.off)').nth(1).click(); await page.locator('#dOff').check(); await page.waitForSelector('#dNote');
+  ok(before !== await page.locator('#daycard').innerText(), 'gün menüsü elle değiştirildi');
+  await page.locator('#daycard [data-act="day"]').click(); await page.locator('[data-act="dshuffle"]').click(); await page.waitForSelector('#sheet .panel'); await page.locator('#sheet [data-act="dsave"]').click();
+  ok((await page.locator('#daycard .lrow').count()) === 5, 'gün yeniden oluşturuldu (5 çeşit)');
+  // yemek yok yap / geri al
+  await page.locator('#daycard [data-act="day"]').click(); await page.locator('#dOff').check(); await page.waitForSelector('#dNote');
   await page.locator('#sheet [data-act="dsave"]').click();
-  ok((await page.locator('.day.off').count()) >= 2, 'yemek yok işaretlendi');
-  await page.locator('.day.off').filter({ hasNotText: 'Yılbaşı' }).first().click(); await page.locator('#dOff').uncheck(); await page.waitForSelector('#sheet select[data-i="0"]'); await page.locator('#sheet [data-act="dsave"]').click();
-  ok((await page.locator('.day.off').count()) === 1, 'yemek yok geri alındı');
-  // çarşamba paketini değiştir
-  await page.locator('.day.special').first().click(); await page.waitForSelector('[data-chg="dcombo"]');
+  ok((await page.locator('.cell.off').count()) >= 2, 'yemek yok işaretlendi');
+  await page.locator('#daycard [data-act="day"]').click(); await page.locator('#dOff').uncheck(); await page.waitForSelector('#sheet select[data-i="0"]'); await page.locator('#sheet [data-act="dsave"]').click();
+  ok((await page.locator('.cell.off').count()) === 1, 'yemek yok geri alındı');
+  // çarşamba paketi
+  await page.locator('.cell[data-d="2027-01-06"]').click(); await page.locator('#daycard [data-act="day"]').click(); await page.waitForSelector('[data-chg="dcombo"]');
   await page.locator('[data-chg="dcombo"]').selectOption({ label: 'Tost Günü' }); await page.waitForTimeout(150);
   ok((await page.locator('#sheet').innerText()).includes('Karışık Tost'), 'özel gün paketi değişti'); await page.locator('#sheet [data-act="dsave"]').click();
+
+  // ---- GERİ DÖNÜŞ: tarif sayfası
+  await page.locator('.cell[data-d="2027-01-05"]').click();
+  ok(await page.locator('#backBtn').isHidden(), 'ana sayfada geri düğmesi yok');
+  await page.locator('#daycard .lrow').nth(1).click(); await page.waitForSelector('h1.large');
+  ok(await page.locator('#backBtn').isVisible(), 'tarif sayfasında geri düğmesi var');
+  ok(await page.locator('.lrow.static').count() > 5, 'tarif sayfası malzeme+adım listeliyor');
+  await page.screenshot({ path: '/tmp/s-recipe-page.png' });
+  await page.locator('[data-act="rhc+"]').click(); ok(await page.locator('input[data-chg="rhc"]').inputValue() === '17', 'tarifte kişi sayısı artırıldı (16→17)');
+  await page.locator('#backBtn').click(); await page.waitForSelector('.cal');
+  ok((await page.locator('.cell.sel').getAttribute('data-d')) === '2027-01-05', 'geri dönünce aynı gün seçili');
+  // tarayıcı geri (iPhone kenar kaydırma): alışveriş sayfası
+  await page.locator('#daycard [data-act="goshop"]').click(); await page.waitForSelector('h1.large:has-text("Alışveriş")');
+  ok(await page.locator('#backBtn').isVisible(), 'alışveriş sayfasında geri düğmesi var');
+  await page.goBack(); await page.waitForSelector('.cal');
+  ok(await page.locator('#backBtn').isHidden() && (await page.locator('.cell.sel').count()) === 1, 'tarayıcı geri tuşu takvime döndürdü');
+  await page.locator('#daycard [data-act="gorec"]').click(); await page.waitForSelector('.recipe'); await page.goBack(); await page.waitForSelector('.cal');
+  await page.locator('[data-act="mnext"]').click(); await page.locator('[data-act="mprev"]').click();
+  ok((await page.locator('h1.large').innerText()).includes('Ocak'), 'ay gezinmesi');
 
   // ---- ALIŞVERİŞ
   await page.evaluate(() => { window.__yemekhane.st.week = '2027-01-11'; });
@@ -118,20 +139,20 @@ const fb = http.createServer((req, res) => {
 
   // ---- YILLIK + CSV
   await page.locator('#tabs [data-tab="menu"]').click();
-  await page.evaluate(() => { window.__yemekhane.st.year = '2027'; window.__yemekhane.st.menuMode = 'yil'; window.__yemekhane.render(false); });
+  await page.evaluate(() => { window.__yemekhane.st.month = '2027-01'; window.__yemekhane.render(false); }); await page.locator('[data-act="myear"]').click(); await page.waitForSelector('h3:has-text("Ocak 2027")');
   ok(await page.locator('h3:has-text("Ocak 2027")').count() === 1 && await page.locator('h3:has-text("Aralık 2027")').count() === 1, 'yıllık liste 12 ay');
   const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('[data-act="csv"]').click()]);
   const csv = fs.readFileSync(await dl.path(), 'utf8'); ok(csv.split('\n').length > 200 && csv.includes('Hamburger'), 'CSV indirildi: ' + csv.split('\n').length + ' satır');
   ok(!/tavuk|piliç|nohut|barbunya/i.test(csv), 'CSV’de yasak yemek yok');
-  await page.evaluate(() => { window.__yemekhane.st.menuMode = 'ay'; });
+  await page.locator('#backBtn').click(); await page.waitForSelector('.cal');
 
   // ---- SENKRON: iki cihaz
   await page.locator('#tabs [data-tab="ayar"]').click();
   await page.fill('#syUrl', FB); await page.fill('#syCode', 'test-kod'); await page.locator('[data-act="sysave"]').click(); await page.waitForTimeout(1500);
   ok(Object.keys(db).length === 1, 'bulutta veri oluştu');
   const ctx2 = await br.newContext({ viewport: { width: 1200, height: 800 } }); const p2 = await ctx2.newPage(); p2.on('dialog', d => d.accept());
-  await p2.goto(URL); await p2.waitForSelector('.day');
-  await p2.evaluate(([u]) => { localStorage.setItem('yemekhane.cfg.v1', JSON.stringify({ url: u, code: 'test-kod' })); }, [FB]); await p2.reload(); await p2.waitForSelector('.day'); await p2.waitForTimeout(1500);
+  await p2.goto(URL); await p2.waitForSelector('.cell');
+  await p2.evaluate(([u]) => { localStorage.setItem('yemekhane.cfg.v1', JSON.stringify({ url: u, code: 'test-kod' })); }, [FB]); await p2.reload(); await p2.waitForSelector('.cell'); await p2.waitForTimeout(1500);
   const hc2 = await p2.evaluate(() => window.__yemekhane.store.get('wk:2027-01-11:hc')); ok(hc2 === 16 || hc2 === 50, 'ikinci cihaz bulut verisini aldı (hc=' + hc2 + ')');
   const stk = await p2.evaluate(() => window.__yemekhane.store.keys('stock:').length); ok(stk >= 2, 'ikinci cihaz stoğu gördü (' + stk + ' kalem)');
   const menuKeys = await p2.evaluate(() => window.__yemekhane.store.keys('menu:').length); ok(menuKeys >= 2, 'ikinci cihaz menü değişikliklerini gördü (' + menuKeys + ')');
@@ -143,11 +164,11 @@ const fb = http.createServer((req, res) => {
 
   // çevrimdışı yükleme (servis işçisi önbelleği)
   await page.locator('#tabs [data-tab="menu"]').click(); await page.waitForTimeout(500);
-  await ctx.setOffline(true); await page.reload(); await page.waitForSelector('.day', { timeout: 5000 }).then(() => ok(true, 'çevrimdışı açıldı'), () => ok(false, 'çevrimdışı açılmadı'));
+  await ctx.setOffline(true); await page.reload(); await page.waitForSelector('.cell', { timeout: 5000 }).then(() => ok(true, 'çevrimdışı açıldı'), () => ok(false, 'çevrimdışı açılmadı'));
   await ctx.setOffline(false);
 
   // masaüstü görünümü
-  await page.setViewportSize({ width: 1280, height: 900 }); await page.evaluate(() => { window.__yemekhane.st.tab = 'menu'; window.__yemekhane.st.month = '2027-03'; window.__yemekhane.render(false); }); await page.waitForTimeout(200);
+  await page.setViewportSize({ width: 1280, height: 900 }); await page.evaluate(() => { window.__yemekhane.st.tab = 'menu'; window.__yemekhane.st.page = null; window.__yemekhane.st.month = '2027-03'; window.__yemekhane.st.selDay = '2027-03-02'; window.__yemekhane.render(false); }); await page.waitForTimeout(200);
   await page.screenshot({ path: '/tmp/s-desktop.png' });
 
   const real = errors.filter(e => !/favicon|net::ERR_INTERNET_DISCONNECTED|Failed to load resource/.test(e));

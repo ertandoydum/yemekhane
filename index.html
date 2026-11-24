@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#2f7d4f">
+<meta name="theme-color" content="#f2f2f7">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Yemekhane">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
@@ -14,15 +15,17 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="logo">🍽️</span><div><b>Yemekhane</b><small id="syncInfo">Yerel kayıt</small></div></div>
-  <nav class="tabs" id="tabs">
-    <button data-tab="menu" class="on"><i>📅</i><span>Menü</span></button>
-    <button data-tab="alis"><i>🛒</i><span>Alışveriş</span></button>
-    <button data-tab="tarif"><i>📖</i><span>Tarifler</span></button>
-    <button data-tab="stok"><i>📦</i><span>Stok</span></button>
-    <button data-tab="ayar"><i>⚙️</i><span>Ayarlar</span></button>
-  </nav>
+  <button id="backBtn" class="back" data-act="back" hidden aria-label="Geri"><span class="chev">‹</span> Geri</button>
+  <b id="navTitle" class="navtitle">Menü</b>
+  <small id="syncInfo" class="navright"></small>
 </header>
+<nav class="tabs" id="tabs">
+  <button data-tab="menu" class="on"><i>📅</i><span>Menü</span></button>
+  <button data-tab="alis"><i>🛒</i><span>Alışveriş</span></button>
+  <button data-tab="tarif"><i>📖</i><span>Tarifler</span></button>
+  <button data-tab="stok"><i>📦</i><span>Stok</span></button>
+  <button data-tab="ayar"><i>⚙️</i><span>Ayarlar</span></button>
+</nav>
 <main id="view" aria-live="polite"></main>
 <div id="sheet" class="sheet" hidden></div>
 <div id="toast" class="toast" hidden></div>
