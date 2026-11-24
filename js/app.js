@@ -68,12 +68,51 @@
     }
     return out;
   }
-  function regenerate(start, end, ignoreHoliday) {
+  // ---- kişi sayısı (aşçı), kilit, şifre
+  function cookHc(d) { var v = store.get('ck:' + d); return v > 0 ? v : weekHc(C.mondayOf(d)); }
+  function isLocked(mon) { return !!store.get('lk:' + mon); }
+  function hashPin(p) { var h = 5381, x = 'yemekhane|' + p; for (var i = 0; i < x.length; i++) h = ((h << 5) + h + x.charCodeAt(i)) | 0; return String(h >>> 0); }
+  function pinOn() { return !!store.get('set:pin'); }
+  /* Yeniden oluşturma: kilitli haftalara ve (istenirse) geçmiş günlere dokunmaz; eski hali geri alınabilsin diye saklanır */
+  function regenerate(start, end, ignoreHoliday, skipPast, desc) {
     var seed = (Math.random() * 4294967296) >>> 0;
     var gen = C.generate(start, end, seed, { prev: prevContext(start), ignoreHoliday: !!ignoreHoliday });
-    var n = 0;
-    Object.keys(gen).forEach(function (d) { var old = store.get('menu:' + d); if (old && old.note) gen[d].note = old.note; store.set('menu:' + d, gen[d]); n++; });
+    var n = 0, prev = {};
+    Object.keys(gen).forEach(function (d) {
+      if (isLocked(C.mondayOf(d))) return;
+      if (skipPast && d < today) return;
+      var old = store.get('menu:' + d); prev[d] = old || 0;
+      if (old && old.note) gen[d].note = old.note;
+      store.set('menu:' + d, gen[d]); n++;
+    });
+    if (n) store.set('undo', { ts: Date.now(), desc: desc || 'Menü yeniden oluşturuldu', prev: prev });
     return n;
+  }
+  function regenPlan(start, end, skipPast) {
+    var r = { n: 0, locked: 0, past: 0 };
+    for (var d = start; d <= end; d = C.addDays(d, 1)) {
+      if (C.dow(d) > 5) continue;
+      if (isLocked(C.mondayOf(d))) r.locked++; else if (skipPast && d < today) r.past++; else r.n++;
+    }
+    return r;
+  }
+  function doUndo() {
+    var u = store.get('undo'); if (!u) return;
+    Object.keys(u.prev).forEach(function (d) {
+      if (isLocked(C.mondayOf(d))) return;
+      if (u.prev[d] === 0) store.del('menu:' + d); else store.set('menu:' + d, u.prev[d]);
+    });
+    store.del('undo'); toast('İşlem geri alındı'); render();
+  }
+  /* Onay penceresi: isteğe bağlı yönetici şifresi ve yazılı onay */
+  var pendingConfirm = null;
+  function confirmSheet(o) {
+    pendingConfirm = o;
+    var h = '<h2>' + esc(o.title) + '</h2><div class="card" style="background:var(--warn-l);color:#7c2d12">' + o.body + '</div>';
+    if (pinOn()) h += '<label class="f">Yönetici şifresi</label><input type="password" id="cfPin" inputmode="numeric" autocomplete="off">';
+    if (o.word) h += '<label class="f">Devam etmek için <b>' + esc(o.word) + '</b> yazın</label><input type="text" id="cfWord" autocomplete="off" autocapitalize="characters">';
+    h += '<div id="cfErr" style="color:var(--bad);min-height:22px;margin:6px 0;font-weight:600"></div><div class="row"><button class="btn" data-act="cfcancel">Vazgeç</button><button class="btn ' + (o.danger ? 'warn' : 'primary') + '" data-act="cfok">' + esc(o.ok || 'Onayla') + '</button></div>';
+    showSheet(h);
   }
   function monthRange(ym) {
     var first = ym + '-01', y = +ym.slice(0, 4), m = +ym.slice(5, 7);
@@ -93,7 +132,7 @@
   function cellHtml(d, rng) {
     var day = getDay(d), w = C.dow(d), inM = d >= rng[0] && d <= rng[1];
     if (!inM) return '<div class="cell out"><span class="num">' + (+d.slice(8)) + '</span></div>';
-    var cls = 'cell' + (d === today ? ' today' : '') + (d === st.selDay ? ' sel' : '') + (day && day.combo ? ' sp' + (w === 5 ? ' fri' : '') : '') + (day && day.off ? ' off' : '');
+    var cls = 'cell' + (isLocked(C.mondayOf(d)) ? ' lk' : '') + (d === today ? ' today' : '') + (d === st.selDay ? ' sel' : '') + (day && day.combo ? ' sp' + (w === 5 ? ' fri' : '') : '') + (day && day.off ? ' off' : '');
     var brief = '', full = '';
     if (!day) { brief = ''; full = '<span class="muted">—</span>'; }
     else if (day.off) { brief = 'Tatil'; full = '🚫 ' + esc(day.note || 'Yemek yok'); }
@@ -113,8 +152,9 @@
   }
   function dayDetail(d) {
     var day = getDay(d), w = C.dow(d), mon = C.mondayOf(d);
+    var lk = isLocked(mon);
     var h = '<div class="daycard" id="daycard"><div class="dc-head"><div><div class="dc-title">' + C.GUN[w] + ', ' + C.fmtDate(d, true) + '</div>' +
-      (day && day.combo ? '<span class="chip">' + esc(day.combo) + '</span>' : '') + '</div><button class="btn sm primary" data-act="day" data-d="' + d + '">✏️ Düzenle</button></div>';
+      (day && day.combo ? '<span class="chip">' + esc(day.combo) + '</span> ' : '') + (lk ? '<span class="chip lock">🔒 Hafta onaylı</span>' : '') + '</div><button class="btn sm primary" data-act="day" data-d="' + d + '">' + (lk ? '👁 Görüntüle' : '✏️ Düzenle') + '</button></div>';
     if (!day) h += '<div class="empty">Bu gün için menü yok.</div>';
     else if (day.off) h += '<div class="empty">🚫 Yemek yok' + (day.note ? ' — ' + esc(day.note) : '') + '</div>';
     else {
@@ -122,14 +162,19 @@
         return '<button class="lrow ' + x.s + '" data-act="recipe" data-id="' + x.id + '"><em class="dot"></em><span class="grow">' + esc(recName(x.id)) + '</span><i>›</i></button>';
       }).join('') + '</div>' + (day.note ? '<div class="muted" style="margin:6px 4px">📝 ' + esc(day.note) + '</div>' : '');
     }
-    h += '<div class="row" style="margin-top:10px"><button class="btn sm" data-act="goshop" data-w="' + mon + '">🛒 Haftanın alışverişi</button><button class="btn sm" data-act="gorec" data-w="' + mon + '">📖 Haftanın tarifleri</button><button class="btn sm" data-act="wregen" data-w="' + mon + '">🔄 Haftayı yenile</button></div></div>';
+    h += '<div class="row" style="margin-top:10px"><button class="btn sm" data-act="goshop" data-w="' + mon + '">🛒 Haftanın alışverişi</button><button class="btn sm" data-act="gorec" data-w="' + mon + '">📖 Haftanın tarifleri</button><button class="btn sm" data-act="wregen" data-w="' + mon + '"' + (lk ? ' disabled' : '') + '>🔄 Haftayı yenile</button>' +
+      (lk ? '<button class="btn sm" data-act="unlock" data-w="' + mon + '">🔓 Kilidi aç</button>' : '<button class="btn sm primary" data-act="lock" data-w="' + mon + '">🔒 Haftayı onayla ve kilitle</button>') + '</div>' +
+      '<div class="muted" style="margin-top:6px;font-size:.82rem">' + (lk ? 'Bu hafta onaylandı: menü ve alışveriş kişi sayısı sabit, yeniden oluşturma bu haftaya dokunamaz.' : 'Menüyü kesinleştirince kilitleyin; böylece kimse yanlışlıkla değiştiremez.') + '</div></div>';
     return h;
   }
 
   function viewMenu() {
     var rng = monthRange(st.month), y = st.month.slice(0, 4), m = +st.month.slice(5, 7);
     pickSelDay(rng);
-    var h = '<div class="lt-row"><h1 class="large">' + C.AY[m] + ' <span class="yr">' + y + '</span></h1><div class="row" style="flex-wrap:nowrap"><button class="btn iconbtn" data-act="mprev" aria-label="Önceki ay">‹</button><button class="btn iconbtn" data-act="mnext" aria-label="Sonraki ay">›</button></div></div>';
+    var h = '';
+    var u = store.get('undo');
+    if (u && Date.now() - u.ts < 10 * 60 * 1000) h += '<div class="undobar"><span class="grow">↶ ' + esc(u.desc) + '</span><button class="btn sm" data-act="undo">Geri al</button></div>';
+    h += '<div class="lt-row"><h1 class="large">' + C.AY[m] + ' <span class="yr">' + y + '</span></h1><div class="row" style="flex-wrap:nowrap"><button class="btn iconbtn" data-act="mprev" aria-label="Önceki ay">‹</button><button class="btn iconbtn" data-act="mnext" aria-label="Sonraki ay">›</button></div></div>';
     h += '<div class="toolbar"><button class="btn sm" data-act="mtoday">Bugün</button><button class="btn sm" data-act="myear">📆 Yıllık liste</button><button class="btn sm" data-act="mregen">🔄 Ayı yeniden oluştur</button><button class="btn sm" data-act="print">🖨️ Yazdır</button></div>';
     h += '<div class="cal"><div class="dow">Pzt</div><div class="dow">Sal</div><div class="dow">Çar</div><div class="dow">Per</div><div class="dow">Cum</div>';
     var any = false;
@@ -218,6 +263,11 @@
   function openDay(d) {
     sheetDay = d;
     var day = getDay(d), w = C.dow(d), h = '';
+    if (isLocked(C.mondayOf(d))) {
+      h += '<div class="row spread"><h2>' + C.GUN[w] + ', ' + C.fmtDate(d, true) + '</h2><button class="btn sm" data-act="close">Kapat ✕</button></div><div class="card" style="background:#eef2ff;color:#312e81">🔒 Bu hafta onaylı olduğu için değiştirilemez. Değiştirmek için önce menüdeki “Kilidi aç”ı kullanın.</div>';
+      if (day && !day.off && day.slots) h += '<div class="lgroup">' + day.slots.map(function (x) { return '<div class="lrow static"><em class="dot"></em><span class="grow">' + esc(recName(x.id)) + '</span></div>'; }).join('') + '</div>';
+      showSheet(h); return;
+    }
     h += '<div class="row spread"><h2>' + C.GUN[w] + ', ' + C.fmtDate(d, true) + '</h2><button class="btn sm" data-act="close">Kapat ✕</button></div>';
     h += '<label class="row" style="margin:6px 0"><input type="checkbox" id="dOff" ' + ((day && day.off) ? 'checked' : '') + ' style="width:22px;height:22px"> <b>Bu gün yemek yok</b> (tatil / izin)</label>';
     if (!day || day.off) {
@@ -281,8 +331,13 @@
     return Object.keys(by).map(function (k) { return k + ' (' + C.fmtQty(C.niceRound(by[k], it.ing.unit), it.ing.unit) + ')'; }).join(' • ');
   }
   function hcBox(mon) {
-    var hc = weekHc(mon), has = store.has('wk:' + mon + ':hc');
-    return '<span class="stepper noprint"><button class="btn sm iconbtn" data-act="hc-" data-w="' + mon + '">−</button><input type="number" min="1" inputmode="numeric" value="' + hc + '" data-chg="hc" data-w="' + mon + '" aria-label="Kişi sayısı"><button class="btn sm iconbtn" data-act="hc+" data-w="' + mon + '">+</button></span> <span class="muted">kişi' + (has ? ' (bu hafta özel)' : '') + '</span>';
+    var hc = weekHc(mon), has = store.has('wk:' + mon + ':hc'), lk = isLocked(mon) ? ' disabled' : '';
+    return '<span class="stepper noprint"><button class="btn sm iconbtn" data-act="hc-" data-w="' + mon + '"' + lk + '>−</button><input type="number" min="1" inputmode="numeric" value="' + hc + '" data-chg="hc" data-w="' + mon + '" aria-label="Alışveriş kişi sayısı"' + lk + '><button class="btn sm iconbtn" data-act="hc+" data-w="' + mon + '"' + lk + '>+</button></span> <span class="muted">kişilik alışveriş' + (has ? ' (bu hafta özel)' : '') + (lk ? ' 🔒' : '') + '</span>';
+  }
+  function cookBox(d) {
+    var hc = cookHc(d), has = store.has('ck:' + d);
+    return '<div class="cookbox noprint"><span class="ck-l">👨‍🍳 Bu gün kaç kişilik yemek yapılacak?</span><span class="stepper"><button class="btn sm iconbtn" data-act="chc-" data-d="' + d + '">−</button><input type="number" min="1" inputmode="numeric" value="' + hc + '" data-chg="chc" data-d="' + d + '" aria-label="Günlük kişi sayısı"><button class="btn sm iconbtn" data-act="chc+" data-d="' + d + '">+</button></span>' +
+      (has ? '<button class="btn sm" data-act="chcreset" data-d="' + d + '">↩︎ ' + weekHc(C.mondayOf(d)) + ' kişiye dön</button>' : '') + '</div>';
   }
   function itemRow(it, mon, mode) {
     var key = 'i:' + mon + ':' + it.id, open = st.open[key] ? ' open' : '';
@@ -362,12 +417,13 @@
     }
     var mon = st.week, hc2 = weekHc(mon);
     h = '<div class="pager"><button class="btn iconbtn" data-act="wprev">◀</button><div class="title">' + C.isoWeekLabel(mon) + '</div><button class="btn iconbtn" data-act="wnext">▶</button></div>' + h;
-    h += '<div class="toolbar">' + hcBox(mon) + '<button class="btn sm" data-act="wtoday">Bu hafta</button><button class="btn sm" data-act="printrec">🖨️ Tarifleri yazdır</button></div>';
+    h += '<div class="toolbar">' + hcBox(mon) + '<button class="btn sm" data-act="wtoday">Bu hafta</button><button class="btn sm" data-act="printrec">🖨️ Yazdır</button></div>';
+    h += '<p class="muted noprint" style="margin:0 2px 8px">Yukarıdaki sayı <b>alışveriş</b> içindir. Her günün altından aşçı, o gün gerçekte kaç kişiye yemek yapılacaksa onu seçer; tarif miktarları ona göre değişir, alışveriş listesi etkilenmez.</p>';
     var any = false;
     for (var i = 0; i < 5; i++) {
       var d = C.addDays(mon, i), day = getDay(d); if (!day || day.off || !day.slots) continue; any = true;
-      h += '<div class="dayhead">' + C.GUN[C.dow(d)] + ' – ' + C.fmtDate(d) + (day.combo ? ' • ' + esc(day.combo) : '') + '</div>';
-      h += day.slots.map(function (x) { var r = D.REC[x.id]; return r ? recipeCard(r, hc2, false) : ''; }).join('');
+      h += '<div class="dayhead">' + C.GUN[C.dow(d)] + ' – ' + C.fmtDate(d) + (day.combo ? ' • ' + esc(day.combo) : '') + ' <span class="chip">' + cookHc(d) + ' kişilik</span></div>' + cookBox(d);
+      h += day.slots.map(function (x) { var r = D.REC[x.id]; return r ? recipeCard(r, cookHc(d), false) : ''; }).join('');
     }
     if (!any) h += '<div class="empty card">Bu hafta için menü yok.</div>';
     return h;
@@ -423,12 +479,88 @@
       '<div class="row" style="margin-top:10px"><button class="btn primary" data-act="sysave">Kaydet ve senkronla</button><button class="btn" data-act="synow">Şimdi senkronla</button><button class="btn danger" data-act="syoff">Bağlantıyı kaldır</button></div>' +
       '<p style="margin:.6rem 0 0">Durum: <b>' + esc(info.status) + '</b>' + (info.lastOk ? ' • son: ' + new Date(info.lastOk).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '') + (info.lastErr ? ' • <span style="color:var(--bad)">' + esc(info.lastErr) + '</span>' : '') + ' • bekleyen kayıt: ' + store.dirtyKeys().length + '</p>' +
       '<details class="collapsible"><summary>Firebase nasıl kurulur? (5 dk, ücretsiz)</summary><ol style="padding-left:20px"><li><b>console.firebase.google.com</b> → “Proje ekle” (Analytics’i kapatabilirsiniz).</li><li>Sol menü → <b>Build → Realtime Database → Create database</b> (konum: Avrupa), “test mode” seçin.</li><li>Açılan sayfanın üstündeki adresi kopyalayın (<span class="kbd">https://…firebaseio.com</span>) ve yukarı yapıştırın.</li><li>Kural sekmesinde okuma/yazmanın açık olduğundan emin olun: <pre class="code">{ "rules": { ".read": true, ".write": true } }</pre></li><li>Aynı adres ve kodu telefondaki uygulamaya da girin. Kod tahmin edilmesi zor olduğu için başkaları verinize ulaşamaz; zaten içinde kişisel veri yoktur.</li></ol></details></div>';
+    h += '<div class="card"><h3>🔐 Yönetici şifresi</h3><p class="muted" style="margin:.2rem 0 .6rem">Şifre koyarsanız haftayı kilitleme/açma, günü-haftayı-ayı yeniden oluşturma işlemleri şifre ister; yanlışlıkla yapılan işlemler önlenir. (Kısa bir sayı yeterli. Senkron açıksa tüm cihazlarda geçerlidir.)</p>' +
+      (pinOn() ? '<div class="row"><span class="chip">Şifre tanımlı</span><button class="btn danger" data-act="pinclear">Şifreyi kaldır</button></div>' : '<div class="row" style="flex-wrap:nowrap"><input type="password" id="pinNew" placeholder="Yeni şifre" inputmode="numeric" autocomplete="off"><button class="btn primary" data-act="pinset">Kaydet</button></div>') + '</div>';
     h += '<div class="card"><h3>Yedek / dışa aktarma</h3><div class="row"><button class="btn" data-act="backup">⬇️ Yedeği indir (.json)</button><label class="btn" style="margin:0">⬆️ Yedeği yükle<input type="file" id="restoreFile" accept="application/json" hidden></label><button class="btn" data-act="csv2">📄 Yıllık menü (Excel/CSV)</button></div></div>';
     h += '<div class="card"><h3>Menü kuralları</h3><ul style="margin:.2rem 0;padding-left:20px"><li>Pazartesi, Salı, Perşembe: çorba • ana yemek • pilav/makarna • salata • tatlı</li><li>Çarşamba: fast food / geleneksel gün (hamburger, köfte ekmek, kısır-poğaça, lahmacun, tost)</li><li>Cuma: öğle yemeği kahvaltı (menemen, omlet, krep, pişi, gözleme…)</li><li>Tavuk yok • sade kuru baklagil yok • sebze yemekleri hep kıymalı veya kuşbaşılı • sebze/meyve sezonuna göre seçilir</li><li>Resmi tatiller “yemek yok” işaretlenir (günün üstüne dokunup değiştirebilirsiniz)</li></ul></div>';
     h += '<div class="card"><h3>Verileri sıfırla</h3><p class="muted" style="margin:.2rem 0 .6rem">Bu cihazdaki stok, menü değişiklikleri ve alışveriş işaretleri silinir. (Senkron açıksa buluttaki veri silinmez.)</p><button class="btn danger" data-act="wipe">Bu cihazdaki verileri sil</button></div>';
     h += '<p class="muted" style="text-align:center">Yemekhane Planlayıcı • ' + D.REC_LIST.length + ' tarif • menü ' + C.BASE.start.slice(0, 4) + '–' + C.BASE.end.slice(0, 4) + '</p>';
     return h;
   }
+
+  // ------------------------------------------------------------ YAZDIR (hafta seçmeli)
+  var ps = { start: null, count: 1, menu: true, market: true, rec: false };
+  function weekList() {
+    var out = [], a = C.mondayOf(C.BASE.start), b = C.mondayOf(C.BASE.end);
+    for (var m = a; m <= b; m = C.addDays(m, 7)) out.push(m);
+    return out;
+  }
+  function openPrint(pre) {
+    if (pre) { ps.menu = !!pre.menu; ps.market = !!pre.market; ps.rec = !!pre.rec; }
+    if (!ps.start) ps.start = st.week;
+    var wl = weekList();
+    var h = '<div class="row spread"><h2>🖨️ Yazdır / PDF</h2><button class="btn sm" data-act="close">Kapat ✕</button></div>' +
+      '<p class="muted" style="margin:.2rem 0 .6rem">İstediğiniz haftayı seçin; o haftanın yemek listesi ve market listesi tek seferde yazdırılır (telefonda “PDF olarak kaydet” de seçilebilir).</p>' +
+      '<label class="f">Başlangıç haftası</label><select id="psStart">' + wl.map(function (m) { return '<option value="' + m + '"' + (m === ps.start ? ' selected' : '') + '>' + C.isoWeekLabel(m) + (m === C.mondayOf(today) ? ' (bu hafta)' : '') + '</option>'; }).join('') + '</select>' +
+      '<label class="f">Kaç hafta</label><select id="psCount">' + [1, 2, 3, 4].map(function (n) { return '<option' + (n === ps.count ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select>' +
+      '<div class="card" style="margin-top:10px">' +
+      '<label class="row" style="margin:6px 0"><input type="checkbox" id="psMenu"' + (ps.menu ? ' checked' : '') + ' style="width:22px;height:22px"> <b>Yemek listesi</b> (haftalık menü)</label>' +
+      '<label class="row" style="margin:6px 0"><input type="checkbox" id="psMarket"' + (ps.market ? ' checked' : '') + ' style="width:22px;height:22px"> <b>Market listesi</b> (stoktan düşülmüş)</label>' +
+      '<label class="row" style="margin:6px 0"><input type="checkbox" id="psRec"' + (ps.rec ? ' checked' : '') + ' style="width:22px;height:22px"> <b>Tarifler</b> (aşçı için, günlük kişi sayısıyla)</label></div>' +
+      '<div class="muted" style="font-size:.82rem;margin:4px 2px 10px">Onaylanmamış haftalarda menü değişirse liste de değişir; yazdırmadan önce haftayı onaylayıp kilitlemeniz önerilir.</div>' +
+      '<button class="btn primary" data-act="doprint" style="width:100%">🖨️ Yazdır / PDF</button>';
+    showSheet(h);
+  }
+  function ppHead(title, mon, extra) { return '<h1>' + esc(title) + '</h1><div class="pp-sub">' + C.isoWeekLabel(mon) + (isLocked(mon) ? ' • onaylı' : '') + (extra ? ' • ' + extra : '') + '</div>'; }
+  function menuPrint(mon) {
+    var h = '<section class="pp">' + ppHead('Haftalık Yemek Listesi', mon) + '<table class="pp-t"><tr><th style="width:24%">Gün</th><th>Menü</th></tr>';
+    for (var i = 0; i < 5; i++) {
+      var d = C.addDays(mon, i), day = getDay(d), body;
+      if (!day) body = '—'; else if (day.off) body = 'Yemek yok' + (day.note ? ' (' + esc(day.note) + ')' : '');
+      else if (day.combo) body = '<b>' + esc(day.combo) + '</b><br>' + day.slots.map(function (x) { return esc(recName(x.id)); }).join(' • ');
+      else body = day.slots.map(function (x) { return '<b>' + esc(slotLabel(x.s)) + ':</b> ' + esc(recName(x.id)); }).join('<br>');
+      h += '<tr><td><b>' + C.GUN[i + 1] + '</b><br>' + C.fmtDate(d) + '</td><td>' + body + '</td></tr>';
+    }
+    return h + '</table></section>';
+  }
+  function marketPrint(mon) {
+    var data = shopData(mon), h = '<section class="pp">' + ppHead('Market Listesi', mon, data.hc + ' kişilik');
+    groupByCat(data.buy).forEach(function (g) {
+      h += '<h2>' + esc(D.CATS[g.cat]) + '</h2><table class="pp-t">' + g.items.map(function (it) { return '<tr><td><span class="pp-box"></span>' + esc(it.ing.name) + '</td><td class="r"><b>' + C.fmtQty(it.buy, it.ing.unit) + '</b></td></tr>'; }).join('') + '</table>';
+    });
+    if (data.extras.length) h += '<h2>Ekstra</h2><table class="pp-t">' + data.extras.map(function (e) { return '<tr><td><span class="pp-box"></span>' + esc(e.n) + '</td><td class="r">' + (e.a ? esc(e.a) + ' ' + esc(e.u || '') : '') + '</td></tr>'; }).join('') + '</table>';
+    if (!data.buy.length && !data.extras.length) h += '<p>Alınacak malzeme yok.</p>';
+    return h + '</section>';
+  }
+  function recipePrint(mon) {
+    var h = '';
+    for (var i = 0; i < 5; i++) {
+      var d = C.addDays(mon, i), day = getDay(d); if (!day || day.off || !day.slots) continue;
+      var hc = cookHc(d);
+      h += '<section class="pp"><h1>' + C.GUN[i + 1] + ' • ' + C.fmtDate(d) + ' tarifleri</h1><div class="pp-sub">' + hc + ' kişilik' + (day.combo ? ' • ' + esc(day.combo) : '') + '</div>';
+      day.slots.forEach(function (x) {
+        var r = D.REC[x.id]; if (!r) return;
+        h += '<h2>' + esc(r.name) + '</h2><table class="pp-t">' + r.ing.map(function (y) { var g = ing(y.id); return '<tr><td>' + esc(g.name) + '</td><td class="r">' + C.fmtQty(C.niceRound(C.scale(y.q, hc), g.unit), g.unit) + '</td></tr>'; }).join('') + '</table><ol class="pp-s">' + r.steps.map(function (z) { return '<li>' + esc(z) + '</li>'; }).join('') + '</ol>';
+      });
+      h += '</section>';
+    }
+    return h;
+  }
+  function doPrint() {
+    var html = '';
+    for (var i = 0; i < ps.count; i++) {
+      var mon = C.addDays(ps.start, i * 7);
+      if (ps.menu) html += menuPrint(mon);
+      if (ps.market) html += marketPrint(mon);
+      if (ps.rec) html += recipePrint(mon);
+    }
+    if (!html) { toast('Yazdırılacak bir şey seçilmedi'); return; }
+    closeSheet(); render();
+    $('#printArea').innerHTML = html;
+    document.body.classList.add('pa');
+    setTimeout(function () { window.print(); }, 80);
+  }
+  window.addEventListener('afterprint', function () { document.body.classList.remove('pa'); $('#printArea').innerHTML = ''; });
 
   // ------------------------------------------------------------ çizim
   var pendingRender = false;
@@ -522,27 +654,59 @@
       case 'mnext': st.month = shiftMonth(st.month, 1); st.selDay = null; render(false); window.scrollTo(0, 0); break;
       case 'mtoday': st.month = today.slice(0, 7); st.selDay = C.dow(today) <= 5 ? today : null; render(false); break;
       case 'mregen':
-        if (confirm(C.AY[+st.month.slice(5)] + ' ayının menüsü yeniden oluşturulsun mu? (Elle yaptığınız değişiklikler de silinir)')) {
-          var r = monthRange(st.month); var n = regenerate(r[0], r[1]); toast(n + ' gün yeniden oluşturuldu'); render();
-        } break;
+        var mr = monthRange(st.month), pl = regenPlan(mr[0], mr[1], true), mname = C.AY[+st.month.slice(5)];
+        if (!pl.n) { toast('Yenilenecek gün yok (geçmiş veya kilitli haftalar korunur)'); break; }
+        confirmSheet({ title: mname + ' ayını yeniden oluştur', body: '<b>' + pl.n + ' günün</b> menüsü değişecek, elle yaptığınız değişiklikler de silinir; alışveriş listeleri etkilenir.<br>Korunanlar: ' + pl.past + ' geçmiş gün, ' + pl.locked + ' kilitli hafta günü.<br>İşlemden sonra 10 dakika içinde “Geri al” yapabilirsiniz.', word: 'ONAYLA', danger: true, ok: 'Ayı yeniden oluştur',
+          run: function () { var n = regenerate(mr[0], mr[1], false, true, mname + ' ayı yeniden oluşturuldu (' + pl.n + ' gün)'); toast(n + ' gün yeniden oluşturuldu'); } });
+        break;
       case 'wregen':
-        if (confirm('Bu haftanın menüsü yeniden oluşturulsun mu?')) { regenerate(w, C.addDays(w, 4)); toast('Hafta yenilendi'); render(); } break;
+        if (isLocked(w)) { toast('Hafta kilitli'); break; }
+        confirmSheet({ title: 'Haftayı yeniden oluştur', body: C.isoWeekLabel(w) + ' haftasının menüsü değişecek ve alışveriş listesi etkilenecek. “Geri al” ile geri alınabilir.', danger: true, ok: 'Haftayı yenile',
+          run: function () { var n = regenerate(w, C.addDays(w, 4), false, false, 'Hafta yeniden oluşturuldu'); toast(n + ' gün yeniden oluşturuldu'); } });
+        break;
+      case 'lock':
+        confirmSheet({ title: 'Haftayı onayla ve kilitle', body: C.isoWeekLabel(w) + ' haftasının menüsü ve alışveriş kişi sayısı sabitlenecek. Kilit açılana kadar hiçbir işlem (gün/ay yenileme, yemek değiştirme) bu haftayı değiştiremez.', ok: 'Kilitle',
+          run: function () { store.set('lk:' + w, { at: Date.now() }); toast('Hafta kilitlendi'); } });
+        break;
+      case 'unlock':
+        confirmSheet({ title: 'Kilidi aç', body: 'Hafta tekrar değiştirilebilir olacak; menü ve alışveriş listesi değişebilir.', danger: true, ok: 'Kilidi aç', run: function () { store.del('lk:' + w); toast('Kilit açıldı'); } });
+        break;
+      case 'undo': doUndo(); break;
+      case 'cfcancel': pendingConfirm = null; closeSheet(); render(); break;
+      case 'cfok':
+        var pc = pendingConfirm, er = $('#cfErr'); if (!pc) break;
+        if (pinOn() && hashPin(($('#cfPin') || {}).value || '') !== store.get('set:pin')) { er.textContent = 'Şifre yanlış.'; break; }
+        if (pc.word && (($('#cfWord') || {}).value || '').trim().toLocaleUpperCase('tr') !== pc.word.toLocaleUpperCase('tr')) { er.textContent = 'Onay kelimesi yanlış.'; break; }
+        pendingConfirm = null; closeSheet(); pc.run(); render(); break;
+      case 'chc-': case 'chc+': store.set('ck:' + d, Math.max(1, cookHc(d) + (a === 'chc+' ? 1 : -1))); render(); break;
+      case 'chcreset': store.del('ck:' + d); render(); break;
+      case 'pinset':
+        var pv = ($('#pinNew') || {}).value || ''; if (pv.length < 3) { toast('Şifre en az 3 karakter olmalı'); break; }
+        store.set('set:pin', hashPin(pv)); toast('Şifre kaydedildi'); render(); break;
+      case 'pinclear':
+        confirmSheet({ title: 'Şifreyi kaldır', body: 'Şifre kalkarsa korumalı işlemler şifresiz yapılabilir.', danger: true, ok: 'Kaldır', run: function () { store.del('set:pin'); toast('Şifre kaldırıldı'); } });
+        break;
       case 'myear': st.year = st.month.slice(0, 4); push({ type: 'year' }); break;
       case 'back': history.back(); break;
       case 'sel': st.selDay = d; render(); var dc = $('#daycard'); if (dc && dc.scrollIntoView) dc.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); break;
-      case 'recipe': push({ type: 'recipe', id: id, hc: weekHc(C.mondayOf(st.selDay || today)) }); break;
+      case 'recipe': push({ type: 'recipe', id: id, hc: cookHc(st.selDay || today) }); break;
       case 'rhc-': case 'rhc+': st.page.hc = Math.max(1, (st.page.hc || defaultHc()) + (a === 'rhc+' ? 1 : -1)); render(); break;
       case 'yprev': st.year = String(+st.year - 1); render(false); break;
       case 'ynext': st.year = String(+st.year + 1); render(false); break;
       case 'csv': case 'csv2': var yy = a === 'csv' ? st.year : (st.year || today.slice(0, 4)); download('yemek-listesi-' + yy + '.csv', csvYear(yy), 'text/csv;charset=utf-8'); break;
-      case 'print': $$('details.recipe').forEach(function (x) { x.open = true; }); window.print(); break;
-      case 'printrec': $$('details.recipe').forEach(function (x) { x.open = true; }); window.print(); break;
+      case 'print':
+        if (st.page && st.page.type === 'year') { $$('details.recipe').forEach(function (x) { x.open = true; }); window.print(); }
+        else openPrint(st.tab === 'alis' || (st.page && st.page.type === 'shop') ? { menu: false, market: true, rec: false } : { menu: true, market: true, rec: false });
+        break;
+      case 'printrec': openPrint({ menu: false, market: false, rec: true }); break;
+      case 'doprint': doPrint(); break;
       case 'goshop': st.week = w; push({ type: 'shop' }); break;
       case 'gorec': st.week = w; st.tarifMode = 'hafta'; push({ type: 'rec' }); break;
       case 'wprev': st.week = C.addDays(st.week, -7); render(false); window.scrollTo(0, 0); break;
       case 'wnext': st.week = C.addDays(st.week, 7); render(false); window.scrollTo(0, 0); break;
       case 'wtoday': st.week = C.mondayOf(today); render(false); break;
       case 'hc-': case 'hc+':
+        if (isLocked(w)) { toast('Hafta kilitli'); break; }
         var cur = weekHc(w), nv = Math.max(1, cur + (a === 'hc+' ? 1 : -1)); store.set('wk:' + w + ':hc', nv); render(); break;
       case 'dhc-': case 'dhc+': store.set('set:hc', Math.max(1, defaultHc() + (a === 'dhc+' ? 1 : -1))); render(); break;
       case 'xhave': store.set('wk:' + w + ':x:' + id, 'have'); toast('Listeden çıkarıldı (elimizde var)'); render(); break;
@@ -597,8 +761,12 @@
       case 'wipe': if (confirm('Bu cihazdaki tüm veriler silinsin mi? Bu işlem geri alınamaz.')) { store.clearAll(); toast('Silindi'); render(); } break;
       // gün penceresi
       case 'dsave': saveDayNote(d); closeSheet(); render(); break;
-      case 'dgen': saveDayNote(d); regenerate(d, d, true); closeSheet(); openDay(d); render(); break;
-      case 'dshuffle': saveDayNote(d); regenerate(d, d, true); closeSheet(); openDay(d); render(); break;
+      case 'dgen': saveDayNote(d); regenerate(d, d, true, false, 'Gün menüsü oluşturuldu'); closeSheet(); openDay(d); render(); break;
+      case 'dshuffle':
+        saveDayNote(d);
+        confirmSheet({ title: 'Günü yeniden oluştur', body: '<b>' + C.fmtDate(d) + '</b> gününün tüm yemekleri değişecek ve alışveriş listesi etkilenecek. “Geri al” ile geri alınabilir.', danger: true, ok: 'Yeniden oluştur',
+          run: function () { regenerate(d, d, true, false, C.fmtDate(d) + ' yeniden oluşturuldu'); toast('Gün yeniden oluşturuldu'); openDay(d); } });
+        break;
       case 'dreset': store.del('menu:' + d); closeSheet(); openDay(d); render(); break;
       case 'ditemdel':
         var o1 = clone(getDay(d)); o1.slots.splice(+t.getAttribute('data-i'), 1); store.set('menu:' + d, o1); openDay(d); render(); break;
@@ -611,6 +779,11 @@
       var f = e.target.files[0]; if (!f) return;
       var rd = new FileReader(); rd.onload = function () { try { var n = store.importAll(JSON.parse(rd.result)); toast(n + ' kayıt yüklendi'); render(); } catch (x) { toast('Dosya okunamadı'); } }; rd.readAsText(f); return;
     }
+    if (e.target.id === 'psStart') { ps.start = e.target.value; return; }
+    if (e.target.id === 'psCount') { ps.count = +e.target.value; return; }
+    if (e.target.id === 'psMenu') { ps.menu = e.target.checked; return; }
+    if (e.target.id === 'psMarket') { ps.market = e.target.checked; return; }
+    if (e.target.id === 'psRec') { ps.rec = e.target.checked; return; }
     if (e.target.id === 'dOff') {
       var dayD = sheetDay; if (!dayD) return;
       if (e.target.checked) { var noteEl = $('#dNote'); store.set('menu:' + dayD, { off: true, note: noteEl ? noteEl.value.trim() : '' }); }
@@ -622,7 +795,8 @@
     switch (a) {
       case 'bought': if (t.checked) store.set('wk:' + w + ':b:' + id, true); else store.del('wk:' + w + ':b:' + id); render(); break;
       case 'exbought': var ex = store.get('wk:' + w + ':ex:' + id); if (ex) { ex = clone(ex); ex.b = t.checked; store.set('wk:' + w + ':ex:' + id, ex); } render(); break;
-      case 'hc': var v = Math.max(1, Math.round(num(t.value)) || defaultHc()); store.set('wk:' + w + ':hc', v); render(); break;
+      case 'chc': store.set('ck:' + d, Math.max(1, Math.round(num(t.value)) || weekHc(C.mondayOf(d)))); render(); break;
+      case 'hc': if (isLocked(w)) { render(); break; } var v = Math.max(1, Math.round(num(t.value)) || defaultHc()); store.set('wk:' + w + ':hc', v); render(); break;
       case 'rhc': st.page.hc = Math.max(1, Math.round(num(t.value)) || defaultHc()); render(); break;
       case 'defhc': store.set('set:hc', Math.max(1, Math.round(num(t.value)) || 16)); toast('Kaydedildi'); break;
       case 'sset': var g = ing(id), md = unitMode(g, stockAmt(id)); setStock(id, num(t.value) * FACTOR[md]); st.su[id] = md; refreshStockRow(id); break;
