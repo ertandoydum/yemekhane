@@ -117,7 +117,7 @@
     var mon = C.mondayOf(rng[0]), any = false;
     for (; mon <= rng[1]; mon = C.addDays(mon, 7)) {
       var days = [];
-      for (var i = 0; i < 5; i++) { var d = C.addDays(mon, i); if (d >= rng[0] && d <= rng[1]) days.push(d); }
+      for (var i = 0; i < 5; i++) { var d = C.addDays(mon, i); if (d >= rng[0] && d <= rng[1] && (d >= C.BASE.start || store.has('menu:' + d))) days.push(d); }
       if (!days.length) continue; any = true;
       h += '<section class="week"><div class="weekhead"><b>' + C.isoWeekLabel(mon) + '</b><span class="row noprint">' +
         '<button class="btn sm" data-act="goshop" data-w="' + mon + '">🛒 Alışveriş</button>' +
