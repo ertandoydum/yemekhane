@@ -2,7 +2,7 @@ const D=require('../js/data.js'), C=require('../js/core.js');
 let fail=0; const ok=(c,m)=>{ if(!c){fail++;console.log('✗',m);} };
 // --- veri kuralları ---
 ok(D.errors.length===0,'veri hataları '+D.errors);
-const bannedWords=/tavuk|piliç|\bhindi\b|nohut|barbunya|kuru fasulye|börülce/i;
+const bannedWords=/tavuk|piliç|balık|somon|hamsi|levrek|çupra|\bhindi\b|nohut|barbunya|kuru fasulye|börülce/i;
 D.REC_LIST.forEach(r=>{
   const txt=r.name+' '+r.steps.join(' ')+' '+r.ing.map(i=>D.ING[i.id].name).join(' ');
   ok(!bannedWords.test(txt),'yasak kelime: '+r.name);
