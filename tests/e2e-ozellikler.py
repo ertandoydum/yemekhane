@@ -71,7 +71,7 @@ try:
         b.close()
 finally:
     srv.terminate()
-errs = [e for e in errs if 'favicon' not in e]
+errs = [e for e in errs if 'favicon' not in e and 'ERR_TUNNEL' not in e and 'firebasedatabase' not in e]
 ok(not errs, 'konsol hatası yok ' + str(errs[:3]))
 print('\nBAŞARISIZ: %d' % len(fails) if fails else '\nYENİ ÖZELLİK TESTLERİ GEÇTİ')
 sys.exit(1 if fails else 0)

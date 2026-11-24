@@ -20,8 +20,10 @@
   try { storage = window.localStorage; storage.setItem('_t', '1'); storage.removeItem('_t'); } catch (e) { storage = null; }
   var store = S.createStore({ storage: storage });
   var CFG_KEY = 'yemekhane.cfg.v1';
-  var cfg = { url: '', code: '' };
-  try { cfg = Object.assign(cfg, JSON.parse(storage.getItem(CFG_KEY) || '{}')); } catch (e) { }
+  // Varsayılan ortak veritabanı: ayar yapmadan tüm cihazlar aynı veriyi görür (Ayarlar'dan değiştirilebilir/kaldırılabilir)
+  var DEFAULT_CFG = { url: 'https://yemekhane-planlayici-default-rtdb.europe-west1.firebasedatabase.app', code: 'yemekhane-iscev-k7p2xq' };
+  var cfg = { url: DEFAULT_CFG.url, code: DEFAULT_CFG.code };
+  try { var rawCfg = storage.getItem(CFG_KEY); if (rawCfg) cfg = Object.assign({ url: '', code: '' }, JSON.parse(rawCfg)); } catch (e) { }
   function saveCfg() { try { storage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch (e) { } }
   var sync = S.createSync(store, function () { return cfg; });
 
