@@ -31,3 +31,6 @@ Tarifler → **Yemek listesi**: tüm yemekler kategorilere göre toplu görünü
 
 ## Stoğa göre menü önerisi
 Stok sekmesi → **Stoğa göre menü önerisi**: elinizdeki stok girildikten sonra, seçilen kişi sayısına göre her kategoride (çorba, ana yemek, pilav, salata, tatlı) stokla en çok karşılanan yemekleri ve eksik malzemeleri gösterir; üstte önerilen tam menü yer alır.
+
+## Menüyü paylaşma
+Menü sekmesi → **📲 Paylaş**: seçilen haftanın (veya yalnızca seçili günün) menüsü metin olarak hazırlanır; WhatsApp/paylaşım menüsüyle gönderilir ya da kopyalanır.

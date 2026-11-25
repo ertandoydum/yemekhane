@@ -260,7 +260,7 @@
     var u = store.get('undo');
     if (u && Date.now() - u.ts < 10 * 60 * 1000) h += '<div class="undobar"><span class="grow">↶ ' + esc(u.desc) + '</span><button class="btn sm" data-act="undo">Geri al</button></div>';
     h += '<div class="lt-row"><h1 class="large">' + C.AY[m] + ' <span class="yr">' + y + '</span></h1><div class="row" style="flex-wrap:nowrap"><button class="btn iconbtn" data-act="mprev" aria-label="Önceki ay">‹</button><button class="btn iconbtn" data-act="mnext" aria-label="Sonraki ay">›</button></div></div>';
-    h += '<div class="toolbar"><button class="btn sm" data-act="mtoday">Bugün</button><button class="btn sm" data-act="myear">📆 Yıllık liste</button><button class="btn sm" data-act="mregen">🔄 Ayı yeniden oluştur</button><button class="btn sm" data-act="print">🖨️ Yazdır</button></div>';
+    h += '<div class="toolbar"><button class="btn sm" data-act="mtoday">Bugün</button><button class="btn sm" data-act="myear">📆 Yıllık liste</button><button class="btn sm" data-act="mregen">🔄 Ayı yeniden oluştur</button><button class="btn sm primary" data-act="shmenu">📲 Paylaş</button><button class="btn sm" data-act="print">🖨️ Yazdır</button></div>';
     h += '<div class="cal"><div class="dow">Pzt</div><div class="dow">Sal</div><div class="dow">Çar</div><div class="dow">Per</div><div class="dow">Cum</div>';
     var any = false;
     for (var mon = C.mondayOf(rng[0]); mon <= rng[1]; mon = C.addDays(mon, 7)) {
@@ -558,6 +558,35 @@
       '<div class="ctl"><button class="btn sm iconbtn" data-act="sstep" data-dir="-1" data-id="' + g.id + '">−</button><input type="text" inputmode="decimal" value="' + val + '" data-chg="sset" data-id="' + g.id + '" aria-label="' + esc(g.name) + ' miktarı">' + toggle + '<button class="btn sm iconbtn" data-act="sstep" data-dir="1" data-id="' + g.id + '">+</button></div>' +
       '<div class="more"><span>Asgari stok (uyarı):</span><input type="text" inputmode="decimal" value="' + C.trimNum(Math.round(m / f * 1000) / 1000) + '" data-chg="smin" data-id="' + g.id + '"> <span>' + mode + '</span>' + (g.custom ? '<button class="btn sm danger" data-act="sdelitem" data-id="' + g.id + '">Ürünü sil</button>' : '') + '</div></div>';
   }
+  // ---- menü paylaşma
+  var shMon = '', shDay = false;
+  function dayLine(d) {
+    var day = getDay(d), w = C.dow(d), head = C.GUN[w] + ' ' + C.fmtDate(d);
+    if (!day) return head + ': —';
+    if (day.off) return head + ': Yemek yok' + (day.note ? ' (' + day.note + ')' : '');
+    if (day.combo) return head + ' – ' + day.combo + ': ' + day.slots.map(function (x) { return recName(x.id); }).join(' • ');
+    return head + '\n' + day.slots.map(function (x) { return '• ' + slotLabel(x.s) + ': ' + recName(x.id); }).join('\n');
+  }
+  function menuText(mon, onlyDay) {
+    if (onlyDay) return '🍽️ Yemek Menüsü\n\n' + dayLine(onlyDay);
+    var out = ['🍽️ Haftalık Yemek Menüsü', C.isoWeekLabel(mon), ''];
+    for (var i = 0; i < 5; i++) out.push(dayLine(C.addDays(mon, i)), '');
+    return out.join('\n').trim();
+  }
+  function shareSheet() {
+    if (!shMon) shMon = C.mondayOf(st.selDay || today);
+    var text = menuText(shMon, shDay ? (st.selDay || shMon) : null);
+    var h = '<div class="row spread"><h2>📲 Menüyü paylaş</h2><button class="btn sm" data-act="dfcancel">Kapat ✕</button></div>';
+    h += '<div class="row" style="align-items:center;margin:6px 0"><button class="btn sm" data-act="shw-">‹</button><b>' + C.isoWeekLabel(shMon) + '</b><button class="btn sm" data-act="shw+">›</button></div>';
+    h += '<div class="seg" style="margin-bottom:8px"><button data-act="shmode" data-m="w" class="' + (shDay ? '' : 'on') + '">Tüm hafta</button><button data-act="shmode" data-m="d" class="' + (shDay ? 'on' : '') + '">Seçili gün</button></div>';
+    h += '<pre id="shText" style="white-space:pre-wrap;background:#eef6fb;border-radius:10px;padding:10px;font:inherit;max-height:40vh;overflow:auto">' + esc(text) + '</pre>';
+    h += '<div class="row" style="margin-top:8px"><button class="btn primary" data-act="shsend">📲 WhatsApp / Paylaş</button><button class="btn" data-act="shcopy">📋 Kopyala</button></div>';
+    showSheet(h);
+  }
+  function copyText(text, msg) {
+    (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { toast(msg); }, function () { var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); toast(msg); } catch (x) { toast('Kopyalanamadı'); } ta.remove(); });
+  }
+
   // ---- stoğa göre menü önerisi
   var sgHc = 0;
   function suggestSheet() {
@@ -879,6 +908,15 @@
           store.set('wk:' + w + ':closed', true); toast('Stoktan düşüldü (' + k2 + ' kalem)'); render();
         } break;
       case 'dcat': st.dcat = t.getAttribute('data-c'); render(false); break;
+      case 'shmenu': shMon = ''; shDay = false; shareSheet(); break;
+      case 'shw-': case 'shw+': shMon = C.addDays(shMon, a === 'shw+' ? 7 : -7); shareSheet(); break;
+      case 'shmode': shDay = t.getAttribute('data-m') === 'd'; shareSheet(); break;
+      case 'shsend':
+        var stx = $('#shText').textContent;
+        if (navigator.share) navigator.share({ text: stx }).catch(function () { });
+        else window.open('https://wa.me/?text=' + encodeURIComponent(stx), '_blank');
+        break;
+      case 'shcopy': copyText($('#shText').textContent, 'Menü kopyalandı'); break;
       case 'suggest': sgHc = 0; suggestSheet(); break;
       case 'sgh-': case 'sgh+': sgHc = Math.max(1, (sgHc || defaultHc()) + (a === 'sgh+' ? 1 : -1)); suggestSheet(); break;
       case 'newdish': dishForm = null; openDishForm(null); break;
