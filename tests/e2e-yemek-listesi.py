@@ -46,10 +46,13 @@ try:
         ok(pg.locator('#sheet option:has-text("Mantarlı Test Yemeği")').count() >= 1, 'günlük menü seçiminde yeni yemek var')
         pg.click('[data-act=close]')
 
-        # menüde kullanma
         pg.click('nav [data-tab=tarif]'); pg.click('[data-m=liste]')
-        pg.click('.item:has-text("Mantarlı Test Yemeği") >> .name'); pg.click('.item:has-text("Mantarlı Test Yemeği") >> [data-act=exdish]')
-        ok('Menüde yok' in pg.inner_text('.item:has-text("Mantarlı Test Yemeği")'), 'menüde kullanma kapatıldı')
+        # hazır yemeği menüden çıkar / geri ekle
+        pg.fill('#dq','Kıymalı Karnabahar'); pg.click('.item >> .name'); pg.click('[data-act=rmdish]'); pg.click('[data-act=cfok]')
+        pg.fill('#dq',''); ok('Menüden çıkarılanlar' in pg.inner_text('#view'),'yemek menüden çıkarıldı ve çıkarılanlar bölümüne taşındı')
+        ok(pg.locator('.item:has-text("Kıymalı Karnabahar")').count()==0,'çıkarılan yemek listeden kalktı')
+        pg.click('[data-act=exdish]'); ok('Menüden çıkarılanlar' not in pg.inner_text('#view') and pg.locator('.item:has-text("Kıymalı Karnabahar")').count()>=1,'geri eklendi')
+        pg.fill('#dq','Mantarlı Test'); pg.click('.item >> .name')
         # düzenle (kart zaten açık)
         pg.click('.item:has-text("Mantarlı Test Yemeği") >> [data-act=editdish]')
         pg.fill('#df_name', 'Mantarlı Test Yemeği 2'); pg.click('[data-act=dfsave]'); pg.wait_for_selector('text=Mantarlı Test Yemeği 2')

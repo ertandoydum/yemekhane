@@ -27,7 +27,7 @@ NODE_PATH=<playwright> node tests/e2e.js
 Sunucu gerekmez; dosyalar statiktir.
 
 ## Yemek listesi sayfası
-Tarifler → **Yemek listesi**: tüm yemekler kategorilere göre toplu görünür, aranabilir. **＋ Yeni yemek ekle** ile kendi yemeğinizi (malzeme, miktar, yapılış, sezon) ekleyebilir; listede olmayan malzemeyi tanımlayabilirsiniz. Menü kuralları (tavuk/balık yok, ana yemek kıymalı/kuşbaşılı) form tarafından denetlenir. Eklenen yemekler düzenlenip silinebilir, her yemek için **Menüde kullanma** seçilebilir. Hazır menüler değişmez; yalnızca yeniden oluşturulan menüler yeni havuzu kullanır. Veriler Firebase ile cihazlar arası eşitlenir.
+Tarifler → **Yemek listesi**: tüm yemekler kategorilere göre toplu görünür, aranabilir. **＋ Yeni yemek ekle** ile kendi yemeğinizi (malzeme, miktar, yapılış, sezon) ekleyebilir; listede olmayan malzemeyi tanımlayabilirsiniz. Menü kuralları (tavuk/balık yok, ana yemek kıymalı/kuşbaşılı) form tarafından denetlenir. Eklenen yemekler düzenlenip silinebilir, her yemek **menüden çıkarılabilir** (alttaki listeden geri eklenir). Hazır menüler değişmez; yalnızca yeniden oluşturulan menüler yeni havuzu kullanır. Veriler Firebase ile cihazlar arası eşitlenir.
 
 ## Stoğa göre menü önerisi
 Stok sekmesi → **Stoğa göre menü önerisi**: elinizdeki stok girildikten sonra, seçilen kişi sayısına göre her kategoride (çorba, ana yemek, pilav, salata, tatlı) stokla en çok karşılanan yemekleri ve eksik malzemeleri gösterir; üstte önerilen tam menü yer alır.

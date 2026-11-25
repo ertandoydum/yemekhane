@@ -333,7 +333,7 @@
     var m = season ? C.monthOf(season) : 0;
     var html = '';
     cats.forEach(function (c) {
-      var list = D.REC_LIST.filter(function (r) { return r.cat === c; }).sort(function (a, b) { return tr(a.name, b.name); });
+      var exm = exclMap(), list = D.REC_LIST.filter(function (r) { return r.cat === c && (!exm[r.id] || r.id === selected); }).sort(function (a, b) { return tr(a.name, b.name); });
       var opts = list.map(function (r) {
         var off = m && !D.inSeason(r, m) ? ' (sezon dışı)' : '';
         return '<option value="' + r.id + '"' + (r.id === selected ? ' selected' : '') + '>' + esc(r.name + off) + '</option>';
@@ -490,27 +490,28 @@
   function dishesBody() {
     var q = (st.dq || '').trim().toLocaleLowerCase('tr'), ex = exclMap(), total = 0, h = '';
     var order = ['C', 'A', 'P', 'S', 'T', 'F', 'K'];
-    var cnt = order.map(function (c) { return D.REC_LIST.filter(function (r) { return r.cat === c; }).length; });
-    D.REC_LIST.forEach(function () { total++; });
+    var cnt = order.map(function (c) { return D.REC_LIST.filter(function (r) { return r.cat === c && !ex[r.id]; }).length; });
+    cnt.forEach(function (n) { total += n; });
     h += '<div class="toolbar noprint"><button class="btn sm primary" data-act="newdish">＋ Yeni yemek ekle</button><button class="btn sm" data-act="print">🖨️ Yazdır</button></div>';
     h += '<div class="row noprint" style="margin-bottom:8px"><input type="search" id="dq" placeholder="Yemek ara…" value="' + esc(st.dq || '') + '" data-chg="dq" style="flex:1;min-width:200px"></div>';
     var bx = function (c, label, n) { var on = (st.dcat || '') === c; return '<button class="box dcat' + (on ? ' on' : '') + '" data-act="dcat" data-c="' + c + '" style="border:0;cursor:pointer;font:inherit;' + (on ? 'background:#14507a;color:#fff' : 'background:#eef2f6;color:#334155') + '">' + esc(label) + ' ' + n + '</button>'; };
-    h += '<div class="stat" style="flex-wrap:wrap;gap:6px">' + bx('', 'Tümü', total) + order.map(function (c, i) { return bx(c, D.CAT_NAME[c].split(' ')[0], cnt[i]); }).join('') + (Object.keys(ex).length ? '<span class="box" style="background:#fff1e2;color:#b45309">' + Object.keys(ex).length + ' yemek menüde kullanılmıyor</span>' : '') + '</div>';
+    h += '<div class="stat" style="flex-wrap:wrap;gap:6px">' + bx('', 'Tümü', total) + order.map(function (c, i) { return bx(c, D.CAT_NAME[c].split(' ')[0], cnt[i]); }).join('') + '</div>';
     order.forEach(function (c) {
       if (st.dcat && st.dcat !== c) return;
-      var list = D.REC_LIST.filter(function (r) { return r.cat === c && (!q || r.name.toLocaleLowerCase('tr').indexOf(q) >= 0); }).sort(function (a, b) { return tr(a.name, b.name); });
+      var list = D.REC_LIST.filter(function (r) { return r.cat === c && !ex[r.id] && (!q || r.name.toLocaleLowerCase('tr').indexOf(q) >= 0); }).sort(function (a, b) { return tr(a.name, b.name); });
       if (!list.length) return;
       h += '<div class="card group"><h3>' + esc(D.CAT_NAME[c]) + ' <small>' + list.length + ' yemek</small></h3>' + list.map(function (r) {
         var key = 'd:' + r.id, open = st.open[key] ? ' open' : '', isEx = !!ex[r.id];
         var sub = (r.season ? 'Sezon: ' + C.AY[r.season[0]] + ' – ' + C.AY[r.season[1]] + ' • ' : '') + r.ing.length + ' malzeme';
         var acts = '<button class="btn sm" data-act="recipe" data-id="' + r.id + '">📖 Tarif</button>' +
-          ('CAPST'.indexOf(c) >= 0 ? '<button class="btn sm' + (isEx ? ' warn' : '') + '" data-act="exdish" data-id="' + r.id + '">' + (isEx ? '✓ Menüde tekrar kullan' : '🚫 Menüde kullanma') + '</button>' : '') +
-          (r.custom ? '<button class="btn sm" data-act="editdish" data-id="' + r.id + '">✏️ Düzenle</button><button class="btn sm danger" data-act="deldish" data-id="' + r.id + '">🗑 Sil</button>' : '');
-        return '<div class="item' + open + '" data-act="iopen" data-key="' + key + '"><div class="grow"><div class="name">' + esc(r.name) + (r.custom ? ' <span class="chip">Özel</span>' : '') + (isEx ? ' <span class="chip warn">Menüde yok</span>' : '') + '</div><div class="sub">' + esc(sub) + '</div><div class="acts">' + acts + '</div></div></div>';
+          (r.custom ? '<button class="btn sm" data-act="editdish" data-id="' + r.id + '">✏️ Düzenle</button><button class="btn sm danger" data-act="deldish" data-id="' + r.id + '">🗑 Sil</button>' : '<button class="btn sm danger" data-act="rmdish" data-id="' + r.id + '">🗑 Menüden çıkar</button>');
+        return '<div class="item' + open + '" data-act="iopen" data-key="' + key + '"><div class="grow"><div class="name">' + esc(r.name) + (r.custom ? ' <span class="chip">Özel</span>' : '') + '</div><div class="sub">' + esc(sub) + '</div><div class="acts">' + acts + '</div></div></div>';
       }).join('') + '</div>';
     });
     if (!h.match(/class="card group"/)) h += '<div class="empty">Sonuç yok.</div>';
-    h += '<p class="muted" style="text-align:center">Bir yemeğe dokunarak tarifini açabilir, menüde kullanılıp kullanılmayacağını ayarlayabilirsiniz. “Menüde kullanma” seçilen yemek, yeniden oluşturulan menülere girmez; mevcut menüler değişmez.</p>';
+    var removed = D.REC_LIST.filter(function (r) { return ex[r.id]; }).sort(function (a, b) { return tr(a.name, b.name); });
+    if (removed.length) h += '<div class="card group"><h3>Menüden çıkarılanlar <small>' + removed.length + '</small></h3>' + removed.map(function (r) { return '<div class="lrow static"><span class="grow">' + esc(r.name) + ' <small class="muted">' + esc(D.CAT_NAME[r.cat].split(' ')[0]) + '</small></span><button class="btn sm" data-act="exdish" data-id="' + r.id + '">↩ Geri ekle</button></div>'; }).join('') + '</div>';
+    h += '<p class="muted" style="text-align:center">Bir yemeğe dokunarak tarifini açabilirsiniz. “Menüden çıkar” dediğiniz yemek listeden kalkar, yeniden oluşturulan menülerde ve seçim listelerinde yer almaz; mevcut menülerde geçtiği günler değişmez. Yanlışlıkla çıkarırsanız alttaki listeden geri ekleyebilirsiniz.</p>';
     return h;
   }
   function viewRecipes() {
@@ -937,6 +938,10 @@
         if (emptyRow) emptyRow.id = nid; else dishForm.rows.push({ id: nid, q: '' });
         dishForm.ni = null; openDishForm(); break;
       case 'dfsave': dfSave(); break;
+      case 'rmdish':
+        var rd = D.REC[id]; if (!rd) break;
+        confirmSheet({ title: 'Menüden çıkar', body: '<b>' + esc(rd.name) + '</b> listeden ve yeni menülerden çıkarılacak. Mevcut menülerdeki günler değişmez. Sonradan “Menüden çıkarılanlar” bölümünden geri ekleyebilirsiniz.', danger: true, ok: 'Çıkar', run: function () { store.set('rex:' + id, true); toast('Menüden çıkarıldı'); } });
+        break;
       case 'exdish': if (store.has('rex:' + id)) store.del('rex:' + id); else store.set('rex:' + id, true); render(); break;
       case 'deldish':
         var used = usedInMenus(id), rr = D.REC[id]; if (!rr) break;
