@@ -494,8 +494,10 @@
     D.REC_LIST.forEach(function () { total++; });
     h += '<div class="toolbar noprint"><button class="btn sm primary" data-act="newdish">＋ Yeni yemek ekle</button><button class="btn sm" data-act="print">🖨️ Yazdır</button></div>';
     h += '<div class="row noprint" style="margin-bottom:8px"><input type="search" id="dq" placeholder="Yemek ara…" value="' + esc(st.dq || '') + '" data-chg="dq" style="flex:1;min-width:200px"></div>';
-    h += '<div class="stat"><span class="box">' + total + ' yemek</span>' + order.map(function (c, i) { return '<span class="box" style="background:#eef2f6;color:#334155">' + esc(D.CAT_NAME[c].split(' ')[0]) + ' ' + cnt[i] + '</span>'; }).join('') + (Object.keys(ex).length ? '<span class="box" style="background:#fff1e2;color:#b45309">' + Object.keys(ex).length + ' yemek menüde kullanılmıyor</span>' : '') + '</div>';
+    var bx = function (c, label, n) { var on = (st.dcat || '') === c; return '<button class="box dcat' + (on ? ' on' : '') + '" data-act="dcat" data-c="' + c + '" style="border:0;cursor:pointer;font:inherit;' + (on ? 'background:#14507a;color:#fff' : 'background:#eef2f6;color:#334155') + '">' + esc(label) + ' ' + n + '</button>'; };
+    h += '<div class="stat" style="flex-wrap:wrap;gap:6px">' + bx('', 'Tümü', total) + order.map(function (c, i) { return bx(c, D.CAT_NAME[c].split(' ')[0], cnt[i]); }).join('') + (Object.keys(ex).length ? '<span class="box" style="background:#fff1e2;color:#b45309">' + Object.keys(ex).length + ' yemek menüde kullanılmıyor</span>' : '') + '</div>';
     order.forEach(function (c) {
+      if (st.dcat && st.dcat !== c) return;
       var list = D.REC_LIST.filter(function (r) { return r.cat === c && (!q || r.name.toLocaleLowerCase('tr').indexOf(q) >= 0); }).sort(function (a, b) { return tr(a.name, b.name); });
       if (!list.length) return;
       h += '<div class="card group"><h3>' + esc(D.CAT_NAME[c]) + ' <small>' + list.length + ' yemek</small></h3>' + list.map(function (r) {
@@ -846,6 +848,7 @@
           Object.keys(dc).forEach(function (iid) { if (store.get('wk:' + w + ':x:' + iid) === 'out') return; var sa = stockAmt(iid); if (sa > 0) { setStock(iid, sa - dc[iid].need); k2++; } });
           store.set('wk:' + w + ':closed', true); toast('Stoktan düşüldü (' + k2 + ' kalem)'); render();
         } break;
+      case 'dcat': st.dcat = t.getAttribute('data-c'); render(false); break;
       case 'newdish': dishForm = null; openDishForm(null); break;
       case 'editdish': dishForm = null; openDishForm(id); break;
       case 'dfcancel': dishForm = null; closeSheet(); render(); break;

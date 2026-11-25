@@ -15,8 +15,10 @@ try:
         pg.click('nav [data-tab=tarif]'); pg.click('[data-m=liste]')
         txt = pg.inner_text('#view')
         ok('Yeni yemek ekle' in txt and 'Çorbalar' in txt and 'Ana Yemekler' in txt and 'Tatlılar' in txt, 'yemek listesi kategorilerle açıldı')
-        n0 = int(pg.inner_text('.stat .box >> nth=0').split()[0]); ok(n0 > 60, f'toplam yemek sayısı görünüyor ({n0})')
+        n0 = int(pg.inner_text('.stat .box >> nth=0').split()[-1]); ok(n0 > 60, f'toplam yemek sayısı görünüyor ({n0})')
 
+        pg.click('[data-act=dcat][data-c=T]'); ok(pg.locator('.card.group').count() == 1 and 'Tatlı' in pg.inner_text('.card.group h3'), 'kategori düğmesi yalnızca o kategoriyi gösterir')
+        pg.click('[data-act=dcat][data-c=""]'); ok(pg.locator('.card.group').count() == 7, 'Tümü tüm kategorileri gösterir')
         # kural doğrulamaları
         pg.click('[data-act=newdish]'); pg.fill('#df_name', 'Tavuklu Pilav'); pg.click('[data-act=dfsave]')
         ok('tavuk' in pg.inner_text('#dfErr'), 'tavuklu yemek reddedildi')
@@ -32,7 +34,7 @@ try:
         pg.click('[data-act=dfaddrow]'); pg.locator('[data-dfi="2"]').select_option('dana-kiyma'); pg.fill('[data-dfq="2"]', '800')
         pg.fill('#df_per', '15'); pg.click('[data-act=dfsave]')
         pg.wait_for_selector('text=Mantarlı Test Yemeği')
-        ok(int(pg.inner_text('.stat .box >> nth=0').split()[0]) == n0 + 1, 'listede yeni yemek görünüyor (toplam +1)')
+        ok(int(pg.inner_text('.stat .box >> nth=0').split()[-1]) == n0 + 1, 'listede yeni yemek görünüyor (toplam +1)')
         ok('Özel' in pg.inner_text('.item:has-text("Mantarlı Test Yemeği")'), 'özel rozeti var')
 
         # 15 kişilik 1500 g -> 10 kişilik 1000 g olarak saklandı
