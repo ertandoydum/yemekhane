@@ -558,6 +558,35 @@
       '<div class="ctl"><button class="btn sm iconbtn" data-act="sstep" data-dir="-1" data-id="' + g.id + '">−</button><input type="text" inputmode="decimal" value="' + val + '" data-chg="sset" data-id="' + g.id + '" aria-label="' + esc(g.name) + ' miktarı">' + toggle + '<button class="btn sm iconbtn" data-act="sstep" data-dir="1" data-id="' + g.id + '">+</button></div>' +
       '<div class="more"><span>Asgari stok (uyarı):</span><input type="text" inputmode="decimal" value="' + C.trimNum(Math.round(m / f * 1000) / 1000) + '" data-chg="smin" data-id="' + g.id + '"> <span>' + mode + '</span>' + (g.custom ? '<button class="btn sm danger" data-act="sdelitem" data-id="' + g.id + '">Ürünü sil</button>' : '') + '</div></div>';
   }
+  // ---- stoğa göre menü önerisi
+  var sgHc = 0;
+  function suggestSheet() {
+    var hc = sgHc || defaultHc(), ex = exclMap(), anyStock = allIngs().some(function (g) { return stockAmt(g.id) > 0; });
+    var h = '<div class="row spread"><h2>🍽️ Stoğa göre menü önerisi</h2><button class="btn sm" data-act="dfcancel">Kapat ✕</button></div>';
+    if (!anyStock) return showSheet(h + '<p class="muted">Önce Stok sekmesinde elinizdeki malzemeleri girin; sonra buradan öneri alabilirsiniz.</p>');
+    h += '<div class="row" style="align-items:center;margin:6px 0"><span>Kaç kişilik?</span><button class="btn sm" data-act="sgh-">−</button><b style="min-width:30px;text-align:center">' + hc + '</b><button class="btn sm" data-act="sgh+">＋</button></div>';
+    h += '<p class="muted" style="margin:.2rem 0 .6rem">Her kategoride, elinizdeki stokla en çok karşılanan yemekler üstte. Eksik malzemeler yazılır.</p>';
+    var sc = function (r) {
+      var miss = [], have = 0;
+      r.ing.forEach(function (x) { var g = ing(x.id), need = C.scale(x.q, hc), a = stockAmt(x.id); if (a >= need - 1e-6) have++; else miss.push(g.name + (a > 0 ? ' (' + C.fmtQty(C.niceRound(need - a, g.unit), g.unit) + ' eksik)' : '')); });
+      return { r: r, have: have, n: r.ing.length, miss: miss, frac: r.ing.length ? have / r.ing.length : 0 };
+    };
+    var best = [];
+    ['C', 'A', 'P', 'S', 'T'].forEach(function (c) {
+      var list = D.REC_LIST.filter(function (r) { return r.cat === c && !ex[r.id]; }).map(sc).filter(function (x) { return x.have > 0; })
+        .sort(function (a, b) { return b.frac - a.frac || b.have - a.have || tr(a.r.name, b.r.name); }).slice(0, 5);
+      if (!list.length) return;
+      best.push(list[0]);
+      h += '<div class="card group"><h3>' + esc(D.CAT_NAME[c]) + '</h3>' + list.map(function (x) {
+        var full = !x.miss.length;
+        return '<div class="item open"><div class="grow"><div class="name">' + esc(x.r.name) + ' <span class="chip' + (full ? '' : ' warn') + '">' + (full ? '✓ Tamamı stokta' : x.have + '/' + x.n + ' malzeme var') + '</span></div>' +
+          (full ? '' : '<div class="sub">Eksik: ' + esc(x.miss.join(', ')) + '</div>') + '<div class="acts"><button class="btn sm" data-act="recipe" data-id="' + x.r.id + '">📖 Tarif</button></div></div></div>';
+      }).join('') + '</div>';
+    });
+    if (best.length) h = h.replace('<p class="muted"', '<div class="card" style="background:#eef6fb"><b>Önerilen menü:</b> ' + best.map(function (x) { return esc(x.r.name); }).join(' • ') + '</div><p class="muted"');
+    else h += '<div class="empty card">Stoktaki malzemelerle eşleşen yemek bulunamadı.</div>';
+    showSheet(h);
+  }
   function viewStock() {
     var q = st.sq.trim().toLocaleLowerCase('tr');
     var list = allIngs().filter(function (g) {
@@ -568,6 +597,7 @@
     var totalHave = allIngs().filter(function (g) { return stockAmt(g.id) > 0; }).length;
     var lowN = allIngs().filter(function (g) { var m = stockMin(g.id); return m > 0 && stockAmt(g.id) < m; }).length;
     var h = '<h1 class="large">Stok</h1><div class="stat"><span class="box">' + totalHave + ' kalem stokta</span>' + (lowN ? '<span class="box" style="background:var(--warn-l);color:var(--warn)">' + lowN + ' kalem azaldı</span>' : '') + '</div>';
+    h += '<div class="row noprint" style="margin-bottom:8px"><button class="btn primary" data-act="suggest">🍽️ Stoğa göre menü önerisi</button></div>';
     h += '<div class="row" style="margin-bottom:8px"><input type="search" id="sq" placeholder="Ürün ara…" value="' + esc(st.sq) + '" data-chg="sq" style="flex:1;min-width:180px"></div>';
     h += '<div class="seg" style="margin-bottom:10px;max-width:100%;overflow:auto">' + [['all', 'Hepsi'], ['have', 'Stokta olan'], ['zero', 'Olmayan'], ['low', 'Azalan']].map(function (x) { return '<button data-act="sf" data-f="' + x[0] + '" class="' + (st.sf === x[0] ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div>';
     var groups = {}; list.forEach(function (g) { (groups[g.cat] = groups[g.cat] || []).push(g); });
@@ -801,7 +831,7 @@
       case 'myear': st.year = st.month.slice(0, 4); push({ type: 'year' }); break;
       case 'back': history.back(); break;
       case 'sel': st.selDay = d; render(); var dc = $('#daycard'); if (dc && dc.scrollIntoView) dc.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); break;
-      case 'recipe': push({ type: 'recipe', id: id, hc: cookHc(st.selDay || today) }); break;
+      case 'recipe': closeSheet(); push({ type: 'recipe', id: id, hc: cookHc(st.selDay || today) }); break;
       case 'rhc-': case 'rhc+': st.page.hc = Math.max(1, (st.page.hc || defaultHc()) + (a === 'rhc+' ? 1 : -1)); render(); break;
       case 'yprev': st.year = String(+st.year - 1); render(false); break;
       case 'ynext': st.year = String(+st.year + 1); render(false); break;
@@ -849,6 +879,8 @@
           store.set('wk:' + w + ':closed', true); toast('Stoktan düşüldü (' + k2 + ' kalem)'); render();
         } break;
       case 'dcat': st.dcat = t.getAttribute('data-c'); render(false); break;
+      case 'suggest': sgHc = 0; suggestSheet(); break;
+      case 'sgh-': case 'sgh+': sgHc = Math.max(1, (sgHc || defaultHc()) + (a === 'sgh+' ? 1 : -1)); suggestSheet(); break;
       case 'newdish': dishForm = null; openDishForm(null); break;
       case 'editdish': dishForm = null; openDishForm(id); break;
       case 'dfcancel': dishForm = null; closeSheet(); render(); break;
