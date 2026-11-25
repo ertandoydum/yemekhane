@@ -70,6 +70,89 @@
     }
     return out;
   }
+  // ---- kullanıcı yemekleri / malzemeleri
+  function exclMap() { var o = {}; store.keys('rex:').forEach(function (k) { o[k.slice(4)] = 1; }); return o; }
+  function applyCustom() {
+    var wantI = {}, wantR = {};
+    store.keys('cing:').forEach(function (k) { var v = store.get(k); if (v && v.name) { v = clone(v); v.id = k.slice(5); wantI[v.id] = 1; D.registerIng(v); } });
+    store.keys('crec:').forEach(function (k) { var v = store.get(k); if (v && v.name) { v = clone(v); v.id = k.slice(5); wantR[v.id] = 1; D.registerRec(v); } });
+    D.REC_LIST.filter(function (r) { return r.custom && !wantR[r.id]; }).forEach(function (r) { D.unregisterRec(r.id); });
+    Object.keys(D.ING).filter(function (i) { return D.ING[i].custom && !wantI[i]; }).forEach(function (i) { D.unregisterIng(i); });
+  }
+  function usedInMenus(id) {
+    return store.keys('menu:').filter(function (k) { var v = store.get(k); return v && v.slots && v.slots.some(function (x) { return x.id === id; }); }).map(function (k) { return k.slice(5); });
+  }
+  var dishForm = null;
+  var MONTH_OPTS = function (sel) { var h = ''; for (var i = 1; i <= 12; i++) h += '<option value="' + i + '"' + (i === sel ? ' selected' : '') + '>' + C.AY[i] + '</option>'; return h; };
+  function ingOptions(sel) {
+    return '<option value="">Malzeme seç…</option>' + Object.keys(D.ING).map(function (i) { return D.ING[i]; }).sort(function (a, b) { return tr(a.name, b.name); })
+      .map(function (g) { return '<option value="' + g.id + '"' + (g.id === sel ? ' selected' : '') + '>' + esc(g.name) + ' (' + g.unit + ')' + '</option>'; }).join('');
+  }
+  function dfCollect() {
+    if (!dishForm) return;
+    var v = function (id) { var e = $('#' + id); return e ? e.value : null; };
+    var nm = v('df_name'); if (nm !== null) dishForm.name = nm;
+    if (v('df_cat') !== null) dishForm.cat = v('df_cat');
+    if (v('df_per') !== null) dishForm.per = v('df_per');
+    if (v('df_steps') !== null) dishForm.steps = v('df_steps');
+    if (v('df_kind') !== null) dishForm.kind = v('df_kind');
+    if (v('df_sea') !== null) { dishForm.sea = v('df_sea'); dishForm.m1 = +v('df_m1') || 1; dishForm.m2 = +v('df_m2') || 12; }
+    $$('[data-dfi]').forEach(function (e) { var i = +e.getAttribute('data-dfi'); if (dishForm.rows[i]) dishForm.rows[i].id = e.value; });
+    $$('[data-dfq]').forEach(function (e) { var i = +e.getAttribute('data-dfq'); if (dishForm.rows[i]) dishForm.rows[i].q = e.value; });
+  }
+  function openDishForm(id) {
+    if (!dishForm) {
+      var r = id && D.REC[id];
+      dishForm = r ? { id: id, name: r.name, cat: r.cat, per: '10', steps: r.steps.join('\n'), kind: (r.tags.indexOf('kofte') >= 0 ? 'kofte' : r.tags.indexOf('kebap') >= 0 ? 'kebap' : ''),
+        sea: r.season ? '1' : '', m1: r.season ? r.season[0] : 1, m2: r.season ? r.season[1] : 12, rows: r.ing.map(function (x) { return { id: x.id, q: String(x.q) }; }), ni: null }
+        : { id: null, name: '', cat: 'A', per: '10', steps: '', kind: '', sea: '', m1: 1, m2: 12, rows: [{ id: '', q: '' }], ni: null };
+    }
+    var f = dishForm;
+    var h = '<div class="row spread"><h2>' + (f.id ? 'Yemeği düzenle' : '＋ Yeni yemek ekle') + '</h2><button class="btn sm" data-act="dfcancel">Kapat ✕</button></div>';
+    h += '<label class="f">Yemek adı</label><input type="text" id="df_name" value="' + esc(f.name) + '" placeholder="Örn. Kıymalı Mantar Yemeği">';
+    h += '<label class="f">Kategori</label><select id="df_cat">' + Object.keys(D.CAT_NAME).map(function (c) { return '<option value="' + c + '"' + (c === f.cat ? ' selected' : '') + '>' + esc(D.CAT_NAME[c]) + '</option>'; }).join('') + '</select>';
+    h += '<label class="f">Malzeme miktarları kaç kişilik?</label><input type="number" min="1" inputmode="numeric" id="df_per" value="' + esc(f.per) + '">';
+    h += '<label class="f">Malzemeler</label>';
+    f.rows.forEach(function (rw, i) {
+      var g = rw.id && D.ING[rw.id];
+      h += '<div class="row" style="flex-wrap:nowrap;margin-bottom:6px"><select data-dfi="' + i + '" style="flex:2">' + ingOptions(rw.id) + '</select><input type="number" step="any" min="0" inputmode="decimal" data-dfq="' + i + '" value="' + esc(rw.q) + '" placeholder="Miktar" style="flex:1;min-width:70px"><span class="muted" style="min-width:34px">' + (g ? esc(g.unit) : '') + '</span><button class="btn sm danger" data-act="dfdelrow" data-i="' + i + '">✕</button></div>';
+    });
+    h += '<div class="row" style="margin:6px 0"><button class="btn sm" data-act="dfaddrow">＋ Malzeme satırı</button><button class="btn sm" data-act="dfnewing">Listede olmayan malzeme tanımla</button></div>';
+    if (f.ni) {
+      h += '<div class="card" style="background:#eef6fb"><b>Yeni malzeme</b><label class="f">Adı</label><input type="text" id="ni_name" value="' + esc(f.ni.name) + '" placeholder="Örn. mantar (taze)"><div class="row" style="flex-wrap:nowrap"><div style="flex:1"><label class="f">Birim</label><select id="ni_unit">' + ['g', 'ml', 'adet', 'demet'].map(function (u) { return '<option' + (u === f.ni.unit ? ' selected' : '') + '>' + u + '</option>'; }).join('') + '</select></div><div style="flex:2"><label class="f">Reyon (alışveriş grubu)</label><select id="ni_cat">' + Object.keys(D.CATS).map(function (c) { return '<option value="' + c + '"' + (c === f.ni.cat ? ' selected' : '') + '>' + esc(D.CATS[c]) + '</option>'; }).join('') + '</select></div></div><div class="row" style="margin-top:8px"><button class="btn sm primary" data-act="dfsaveing">Malzemeyi ekle</button><button class="btn sm" data-act="dfcancelng">Vazgeç</button></div></div>';
+    }
+    h += '<label class="f">Yapılışı (her satır bir adım)</label><textarea id="df_steps" rows="5" placeholder="Soğanı kavurun.\nKıymayı ekleyip pişirin.">' + esc(f.steps) + '</textarea>';
+    h += '<label class="f">Sezon</label><select id="df_sea"><option value="">Her mevsim</option><option value="1"' + (f.sea ? ' selected' : '') + '>Belirli aylar</option></select>';
+    if (f.sea) h += '<div class="row" style="flex-wrap:nowrap;margin-top:6px"><select id="df_m1">' + MONTH_OPTS(f.m1) + '</select><span>–</span><select id="df_m2">' + MONTH_OPTS(f.m2) + '</select></div>';
+    h += '<label class="f">Tür (aynı gün/ardışık tekrarı önlemek için, isteğe bağlı)</label><select id="df_kind"><option value="">Belirtme</option><option value="kofte"' + (f.kind === 'kofte' ? ' selected' : '') + '>Köfte</option><option value="kebap"' + (f.kind === 'kebap' ? ' selected' : '') + '>Kebap</option></select>';
+    h += '<div id="dfErr" style="color:var(--bad);font-weight:600;min-height:22px;margin:8px 0"></div><div class="row"><button class="btn" data-act="dfcancel">Vazgeç</button><button class="btn primary" data-act="dfsave">Kaydet</button></div>';
+    showSheet(h);
+  }
+  function dfSave() {
+    dfCollect(); var f = dishForm, er = $('#dfErr'), fail = function (m) { er.textContent = m; };
+    var name = f.name.trim(); if (!name) return fail('Yemek adı yazın.');
+    if (/tavuk|piliç|balık|hindi/i.test(name)) return fail('Menü kuralı: tavuk/balık/hindi içeren yemek eklenemez.');
+    var dup = D.REC_LIST.filter(function (r) { return r.id !== f.id && r.name.toLocaleLowerCase('tr') === name.toLocaleLowerCase('tr'); })[0];
+    if (dup) return fail('Bu adla bir yemek zaten var: ' + dup.name);
+    var per = Math.max(1, num(f.per) || 10), ings = [], seen = {};
+    for (var i = 0; i < f.rows.length; i++) {
+      var rw = f.rows[i]; if (!rw.id && !num(rw.q)) continue;
+      if (!rw.id) return fail((i + 1) + '. satırda malzeme seçin.');
+      if (!(num(rw.q) > 0)) return fail((D.ING[rw.id] ? D.ING[rw.id].name : 'Malzeme') + ' için miktar yazın.');
+      if (seen[rw.id]) return fail(D.ING[rw.id].name + ' iki kez eklenmiş.');
+      seen[rw.id] = 1;
+      if (/tavuk|piliç|balık|hindi/i.test(D.ING[rw.id].name)) return fail('Menü kuralı: tavuk/balık/hindi malzemesi kullanılamaz.');
+      ings.push({ id: rw.id, q: Math.round(num(rw.q) * 10 / per * 100) / 100 });
+    }
+    if (!ings.length) return fail('En az bir malzeme ekleyin.');
+    if (f.cat === 'A' && !seen['dana-kiyma'] && !seen['dana-kusbasi']) return fail('Menü kuralı: ana yemek kıymalı veya kuşbaşı etli olmalı (dana kıyma / dana kuşbaşı ekleyin).');
+    var steps = f.steps.split('\n').map(function (x) { return x.trim(); }).filter(Boolean); if (!steps.length) return fail('Yapılışını yazın (en az bir adım).');
+    var id = f.id;
+    if (!id) { id = 'o-' + D.slug(name); var n = 2, base = id; while (D.REC[id]) id = base + '-' + (n++); }
+    store.set('crec:' + id, { name: name, cat: f.cat, tags: f.kind ? [f.kind] : [], season: f.sea ? [f.m1, f.m2] : null, ing: ings, steps: steps });
+    applyCustom(); dishForm = null; closeSheet(); toast(f.id ? 'Yemek güncellendi' : 'Yemek eklendi: ' + name); render();
+  }
+
   // ---- kişi sayısı (aşçı), kilit, şifre
   function cookHc(d) { var v = store.get('ck:' + d); return v > 0 ? v : weekHc(C.mondayOf(d)); }
   function isLocked(mon) { return !!store.get('lk:' + mon); }
@@ -78,7 +161,7 @@
   /* Yeniden oluşturma: kilitli haftalara ve (istenirse) geçmiş günlere dokunmaz; eski hali geri alınabilsin diye saklanır */
   function regenerate(start, end, ignoreHoliday, skipPast, desc) {
     var seed = (Math.random() * 4294967296) >>> 0;
-    var gen = C.generate(start, end, seed, { prev: prevContext(start), ignoreHoliday: !!ignoreHoliday });
+    var gen = C.generate(start, end, seed, { prev: prevContext(start), ignoreHoliday: !!ignoreHoliday, exclude: exclMap(), includeCustom: true });
     var n = 0, prev = {};
     Object.keys(gen).forEach(function (d) {
       if (isLocked(C.mondayOf(d))) return;
@@ -404,8 +487,33 @@
       '<div><b>Yapılışı</b><ol>' + r.steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
       (r.season ? '<small class="muted">Sezon: ' + C.AY[r.season[0]] + ' – ' + C.AY[r.season[1]] + '</small>' : '') + '</div></div></details>';
   }
+  function dishesBody() {
+    var q = (st.dq || '').trim().toLocaleLowerCase('tr'), ex = exclMap(), total = 0, h = '';
+    var order = ['C', 'A', 'P', 'S', 'T', 'F', 'K'];
+    var cnt = order.map(function (c) { return D.REC_LIST.filter(function (r) { return r.cat === c; }).length; });
+    D.REC_LIST.forEach(function () { total++; });
+    h += '<div class="toolbar noprint"><button class="btn sm primary" data-act="newdish">＋ Yeni yemek ekle</button><button class="btn sm" data-act="print">🖨️ Yazdır</button></div>';
+    h += '<div class="row noprint" style="margin-bottom:8px"><input type="search" id="dq" placeholder="Yemek ara…" value="' + esc(st.dq || '') + '" data-chg="dq" style="flex:1;min-width:200px"></div>';
+    h += '<div class="stat"><span class="box">' + total + ' yemek</span>' + order.map(function (c, i) { return '<span class="box" style="background:#eef2f6;color:#334155">' + esc(D.CAT_NAME[c].split(' ')[0]) + ' ' + cnt[i] + '</span>'; }).join('') + (Object.keys(ex).length ? '<span class="box" style="background:#fff1e2;color:#b45309">' + Object.keys(ex).length + ' yemek menüde kullanılmıyor</span>' : '') + '</div>';
+    order.forEach(function (c) {
+      var list = D.REC_LIST.filter(function (r) { return r.cat === c && (!q || r.name.toLocaleLowerCase('tr').indexOf(q) >= 0); }).sort(function (a, b) { return tr(a.name, b.name); });
+      if (!list.length) return;
+      h += '<div class="card group"><h3>' + esc(D.CAT_NAME[c]) + ' <small>' + list.length + ' yemek</small></h3>' + list.map(function (r) {
+        var key = 'd:' + r.id, open = st.open[key] ? ' open' : '', isEx = !!ex[r.id];
+        var sub = (r.season ? 'Sezon: ' + C.AY[r.season[0]] + ' – ' + C.AY[r.season[1]] + ' • ' : '') + r.ing.length + ' malzeme';
+        var acts = '<button class="btn sm" data-act="recipe" data-id="' + r.id + '">📖 Tarif</button>' +
+          ('CAPST'.indexOf(c) >= 0 ? '<button class="btn sm' + (isEx ? ' warn' : '') + '" data-act="exdish" data-id="' + r.id + '">' + (isEx ? '✓ Menüde tekrar kullan' : '🚫 Menüde kullanma') + '</button>' : '') +
+          (r.custom ? '<button class="btn sm" data-act="editdish" data-id="' + r.id + '">✏️ Düzenle</button><button class="btn sm danger" data-act="deldish" data-id="' + r.id + '">🗑 Sil</button>' : '');
+        return '<div class="item' + open + '" data-act="iopen" data-key="' + key + '"><div class="grow"><div class="name">' + esc(r.name) + (r.custom ? ' <span class="chip">Özel</span>' : '') + (isEx ? ' <span class="chip warn">Menüde yok</span>' : '') + '</div><div class="sub">' + esc(sub) + '</div><div class="acts">' + acts + '</div></div></div>';
+      }).join('') + '</div>';
+    });
+    if (!h.match(/class="card group"/)) h += '<div class="empty">Sonuç yok.</div>';
+    h += '<p class="muted" style="text-align:center">Bir yemeğe dokunarak tarifini açabilir, menüde kullanılıp kullanılmayacağını ayarlayabilirsiniz. “Menüde kullanma” seçilen yemek, yeniden oluşturulan menülere girmez; mevcut menüler değişmez.</p>';
+    return h;
+  }
   function viewRecipes() {
-    var h = '<h1 class="large">Tarifler</h1><div class="toolbar"><div class="seg"><button data-act="tmode" data-m="hafta" class="' + (st.tarifMode === 'hafta' ? 'on' : '') + '">Bu haftanın tarifleri</button><button data-act="tmode" data-m="tum" class="' + (st.tarifMode === 'tum' ? 'on' : '') + '">Tüm tarifler</button></div></div>';
+    var h = '<h1 class="large">Tarifler</h1><div class="toolbar"><div class="seg"><button data-act="tmode" data-m="hafta" class="' + (st.tarifMode === 'hafta' ? 'on' : '') + '">Bu haftanın tarifleri</button><button data-act="tmode" data-m="tum" class="' + (st.tarifMode === 'tum' ? 'on' : '') + '">Tüm tarifler</button><button data-act="tmode" data-m="liste" class="' + (st.tarifMode === 'liste' ? 'on' : '') + '">Yemek listesi</button></div></div>';
+    if (st.tarifMode === 'liste') return h + dishesBody();
     if (st.tarifMode === 'tum') {
       var hc = defaultHc();
       h += '<div class="row noprint" style="margin-bottom:8px"><input type="search" id="rq" placeholder="Tarif ara… (örn. köfte, mantar)" value="' + esc(st.q) + '" data-chg="rq" style="flex:1;min-width:200px"></div>';
@@ -623,7 +731,7 @@
     if (manual) { if (r && r.error) toast('Senkron hatası: ' + r.error); else if (r && r.off) toast('Önce adres ve kod girin'); else toast('Senkron tamam ✓'); if (st.tab === 'ayar') safeRender(); }
     return r;
   }
-  store.on(function (keys, remote) { if (!remote) scheduleSync(); });
+  store.on(function (keys, remote) { if (!remote) scheduleSync(); if (keys && keys.some(function (k) { return /^(crec|cing):/.test(k); })) applyCustom(); });
   setInterval(function () { if (!document.hidden) doSync(); }, 20000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) doSync(); });
   window.addEventListener('online', function () { doSync(); });
@@ -738,6 +846,30 @@
           Object.keys(dc).forEach(function (iid) { if (store.get('wk:' + w + ':x:' + iid) === 'out') return; var sa = stockAmt(iid); if (sa > 0) { setStock(iid, sa - dc[iid].need); k2++; } });
           store.set('wk:' + w + ':closed', true); toast('Stoktan düşüldü (' + k2 + ' kalem)'); render();
         } break;
+      case 'newdish': dishForm = null; openDishForm(null); break;
+      case 'editdish': dishForm = null; openDishForm(id); break;
+      case 'dfcancel': dishForm = null; closeSheet(); render(); break;
+      case 'dfaddrow': dfCollect(); dishForm.rows.push({ id: '', q: '' }); openDishForm(); break;
+      case 'dfdelrow': dfCollect(); dishForm.rows.splice(+t.getAttribute('data-i'), 1); if (!dishForm.rows.length) dishForm.rows.push({ id: '', q: '' }); openDishForm(); break;
+      case 'dfnewing': dfCollect(); dishForm.ni = { name: '', unit: 'g', cat: 'SEB' }; openDishForm(); break;
+      case 'dfcancelng': dfCollect(); dishForm.ni = null; openDishForm(); break;
+      case 'dfsaveing':
+        dfCollect();
+        var nn = ($('#ni_name').value || '').trim(), nu = $('#ni_unit').value, nc = $('#ni_cat').value, ne = $('#dfErr');
+        if (!nn) { ne.textContent = 'Malzeme adını yazın.'; break; }
+        if (/tavuk|piliç|balık|hindi/i.test(nn)) { ne.textContent = 'Menü kuralı: tavuk/balık/hindi malzemesi eklenemez.'; break; }
+        var nid = D.slug(nn), existing = D.ING[nid];
+        if (!existing) { store.set('cing:' + nid, { name: nn, unit: nu, cat: nc }); applyCustom(); }
+        var emptyRow = dishForm.rows.filter(function (x) { return !x.id && !x.q; })[0];
+        if (emptyRow) emptyRow.id = nid; else dishForm.rows.push({ id: nid, q: '' });
+        dishForm.ni = null; openDishForm(); break;
+      case 'dfsave': dfSave(); break;
+      case 'exdish': if (store.has('rex:' + id)) store.del('rex:' + id); else store.set('rex:' + id, true); render(); break;
+      case 'deldish':
+        var used = usedInMenus(id), rr = D.REC[id]; if (!rr) break;
+        if (used.length) { toast('Bu yemek ' + used.length + ' günlük menüde kullanılıyor; önce o günlerden çıkarın (örn. ' + C.fmtDate(used[0]) + ')'); break; }
+        confirmSheet({ title: 'Yemeği sil', body: '<b>' + esc(rr.name) + '</b> kalıcı olarak silinecek.', danger: true, ok: 'Sil', run: function () { store.del('crec:' + id); store.del('rex:' + id); applyCustom(); toast('Yemek silindi'); } });
+        break;
       case 'tmode': st.tarifMode = t.getAttribute('data-m'); render(false); break;
       case 'rcat': st.cat = t.getAttribute('data-c'); render(false); break;
       case 'sf': st.sf = t.getAttribute('data-f'); render(false); break;
@@ -781,6 +913,7 @@
       var f = e.target.files[0]; if (!f) return;
       var rd = new FileReader(); rd.onload = function () { try { var n = store.importAll(JSON.parse(rd.result)); toast(n + ' kayıt yüklendi'); render(); } catch (x) { toast('Dosya okunamadı'); } }; rd.readAsText(f); return;
     }
+    if (dishForm && (e.target.hasAttribute('data-dfi') || e.target.id === 'df_sea' || e.target.id === 'df_cat')) { dfCollect(); openDishForm(); return; }
     if (e.target.id === 'psStart') { ps.start = e.target.value; return; }
     if (e.target.id === 'psCount') { ps.count = +e.target.value; return; }
     if (e.target.id === 'psMenu') { ps.menu = e.target.checked; return; }
@@ -815,6 +948,7 @@
   document.addEventListener('input', function (e) {
     var t = e.target, a = t.getAttribute && t.getAttribute('data-chg');
     if (a === 'sq') { st.sq = t.value; var pos = t.selectionStart; render(); var el = $('#sq'); el.focus(); el.setSelectionRange(pos, pos); }
+    if (a === 'dq') { st.dq = t.value; var pos3 = t.selectionStart; render(); var el3 = $('#dq'); el3.focus(); el3.setSelectionRange(pos3, pos3); }
     if (a === 'rq') { st.q = t.value; var pos2 = t.selectionStart; render(); var el2 = $('#rq'); el2.focus(); el2.setSelectionRange(pos2, pos2); }
   });
   $('#sheet').addEventListener('click', function (e) { if (e.target.id === 'sheet') { closeSheet(); render(); } });
@@ -824,6 +958,7 @@
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
     navigator.serviceWorker.register('sw.js').catch(function () { });
   }
+  applyCustom();
   render(false);
   if (sync.endpoint()) doSync();
   window.__yemekhane = { store: store, getDay: getDay, st: st, render: render, shopData: shopData, regenerate: regenerate, sync: sync };

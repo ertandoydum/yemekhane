@@ -40,12 +40,16 @@
   var COMBO_IDS = {};
   D.WED.concat(D.FRI).forEach(function (cb) { cb.items.forEach(function (id) { COMBO_IDS[id] = 1; }); });
   // Normal gün havuzu: özel gün paketlerinde geçen tarifler (Kısır, Çay…) günlük menüye girmez
-  function listBySlot(slot) { return D.REC_LIST.filter(function (r) { return r.cat === CATLET[slot] && !COMBO_IDS[r.id]; }); }
+  // Kullanıcı eklediği yemekler ve "menüde kullanma" işaretlenenler yalnızca yeniden oluşturmada (opts) dikkate alınır;
+  // böylece hazır menüler (BASE) bu değişikliklerden etkilenmez.
+  var EXCL = {}, INCL_CUSTOM = false;
+  function listBySlot(slot) { return D.REC_LIST.filter(function (r) { return r.cat === CATLET[slot] && !COMBO_IDS[r.id] && !EXCL[r.id] && (!r.custom || INCL_CUSTOM); }); }
 
   /* generate(start, end, seed, opts)
      opts.prev: öncesindeki günlerin menüsü [{slots:[...]}] (eski→yeni) – tekrarı önlemek için bağlam */
   function generate(start, end, seed, opts) {
     opts = opts || {};
+    EXCL = opts.exclude || {}; INCL_CUSTOM = !!opts.includeCustom;
     var rand = rng(seed);
     var out = {};
     var last = {};            // tarif id -> son kullanılan sayaç

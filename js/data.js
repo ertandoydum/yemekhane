@@ -388,7 +388,33 @@
     return a <= b ? (month >= a && month <= b) : (month >= a || month <= b);
   }
 
+  // --- kullanıcının eklediği yemek / malzemeler (çalışma anında kaydedilir) ---
+  function registerIng(o) {
+    if (!o || !o.id || !o.name) return;
+    if (ING[o.id] && !ING[o.id].custom) return;
+    var x = { id: o.id, name: o.name, unit: o.unit || 'g', cat: CATS[o.cat] ? o.cat : 'DIG', custom: true };
+    ING[x.id] = x; ING_BY_NAME[x.name] = x;
+  }
+  function unregisterIng(id) { var x = ING[id]; if (x && x.custom) { delete ING[id]; if (ING_BY_NAME[x.name] === x) delete ING_BY_NAME[x.name]; } }
+  function unregisterRec(id) {
+    var r = REC[id]; if (!r || !r.custom) return;
+    delete REC[id]; if (REC_BY_NAME[r.name] === r) delete REC_BY_NAME[r.name];
+    var i = REC_LIST.indexOf(r); if (i >= 0) REC_LIST.splice(i, 1);
+  }
+  function registerRec(o) {
+    if (!o || !o.id || !o.name || !CAT_NAME[o.cat]) return;
+    if (REC[o.id] && !REC[o.id].custom) return;
+    unregisterRec(o.id);
+    var r = {
+      id: o.id, name: o.name, cat: o.cat, tags: o.tags || [], season: o.season || null,
+      ing: (o.ing || []).filter(function (x) { return ING[x.id] && x.q > 0; }).map(function (x) { return { id: x.id, q: +x.q }; }),
+      steps: o.steps || [], slot: CAT_SLOT[o.cat], custom: true
+    };
+    REC[r.id] = r; REC_LIST.push(r); REC_BY_NAME[r.name] = r;
+  }
+
   var api = {
+    registerIng: registerIng, unregisterIng: unregisterIng, registerRec: registerRec, unregisterRec: unregisterRec,
     CATS: CATS, ING: ING, REC: REC, REC_LIST: REC_LIST, REC_BY_NAME: REC_BY_NAME,
     WED: WED, FRI: FRI, HOLIDAYS: HOLIDAYS, SLOT_LABEL: SLOT_LABEL, CAT_SLOT: CAT_SLOT, CAT_NAME: CAT_NAME,
     errors: errors, slug: slug, inSeason: inSeason

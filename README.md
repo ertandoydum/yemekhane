@@ -25,3 +25,6 @@ python3 tests/e2e-ozellikler.py   # yeni özellikler (Python Playwright)
 NODE_PATH=<playwright> node tests/e2e.js
 ```
 Sunucu gerekmez; dosyalar statiktir.
+
+## Yemek listesi sayfası
+Tarifler → **Yemek listesi**: tüm yemekler kategorilere göre toplu görünür, aranabilir. **＋ Yeni yemek ekle** ile kendi yemeğinizi (malzeme, miktar, yapılış, sezon) ekleyebilir; listede olmayan malzemeyi tanımlayabilirsiniz. Menü kuralları (tavuk/balık yok, ana yemek kıymalı/kuşbaşılı) form tarafından denetlenir. Eklenen yemekler düzenlenip silinebilir, her yemek için **Menüde kullanma** seçilebilir. Hazır menüler değişmez; yalnızca yeniden oluşturulan menüler yeni havuzu kullanır. Veriler Firebase ile cihazlar arası eşitlenir.
